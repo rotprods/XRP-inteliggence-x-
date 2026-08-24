@@ -1,0 +1,44 @@
+name: salvage-import
+on:
+  push:
+    branches: [feat/xrp-engine-foundation-v0.3]
+    paths:
+      - '.bootstrap/SALVAGE'
+permissions:
+  contents: write
+jobs:
+  salvage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Recover partial source archive
+        shell: bash
+        run: |
+          set -u
+          cat .bootstrap/chunk-*.b64 | tr -d '\n\r ' | base64 -d > /tmp/source.tar.gz || true
+          mkdir -p /tmp/recovered
+          set +e
+          gzip -dc /tmp/source.tar.gz 2>/tmp/gzip-error.log | tar -xf - -C /tmp/recovered --ignore-zeros
+          status=$?
+          set -e
+          echo "partial extraction status=$status"
+          find /tmp/recovered -maxdepth 3 -type f | sort | head -200
+          root="$(find /tmp/recovered -type f -name pyproject.toml -printf '%h\n' | head -1)"
+          if [ -z "$root" ]; then
+            echo 'pyproject.toml was not recoverable' >&2
+            cat /tmp/gzip-error.log >&2 || true
+            exit 1
+          fi
+          test -f "$root/src/xrp_regime_engine/models.py"
+          test -f "$root/src/xrp_regime_engine/scoring.py"
+          test -f "$root/tests/test_scoring.py"
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$root"/. .
+          git config user.name 'xrp-engine-bootstrap'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: recover canonical XRP regime engine foundation'
+          git push --force origin HEAD:feat/xrp-engine-foundation-v0.3
