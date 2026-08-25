@@ -1,0 +1,121 @@
+name: historical-sample-v05
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .historical-sample/READY
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: xrp-historical-sample-v05
+  cancel-in-progress: true
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install httpx
+      - name: Execute bounded public samples
+        id: sample
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports state/sample
+          END=$(date -u -d '1 hour ago' '+%Y-%m-%dT%H:00:00Z')
+          START=$(date -u -d "$END -24 hours" '+%Y-%m-%dT%H:00:00Z')
+
+          python scripts/backfill_xrp_spot_v05.py \
+            --provider coinbase --start "$START" --end "$END" --interval-seconds 3600 \
+            --root state/sample/coinbase --output reports/sample-coinbase-v05.json \
+            > reports/sample-coinbase-v05.log 2>&1
+          COINBASE=$?
+
+          python scripts/backfill_xrp_spot_v05.py \
+            --provider binance --start "$START" --end "$END" --interval-seconds 3600 \
+            --root state/sample/binance --output reports/sample-binance-v05.json \
+            > reports/sample-binance-v05.log 2>&1
+          BINANCE=$?
+
+          export COINBASE BINANCE START END
+          python - <<'PY'
+          import json, os, sqlite3
+          from pathlib import Path
+
+          providers = {}
+          for name in ('coinbase', 'binance'):
+              status = int(os.environ[name.upper()])
+              root = Path('state/sample') / name
+              output = Path('reports') / f'sample-{name}-v05.json'
+              catalog_rows = 0
+              manifests = []
+              if (root / 'catalog.sqlite').exists():
+                  with sqlite3.connect(root / 'catalog.sqlite') as connection:
+                      catalog_rows = connection.execute('SELECT COUNT(*) FROM historical_records').fetchone()[0]
+              if root.exists():
+                  manifests = [str(path.relative_to(root)) for path in root.rglob('manifests/**/*.json')]
+              providers[name] = {
+                  'exit_code': status,
+                  'status': 'PASS' if status == 0 and output.exists() and catalog_rows > 0 and manifests else 'DEGRADED',
+                  'catalog_rows': catalog_rows,
+                  'manifests': manifests,
+                  'output_present': output.exists(),
+              }
+          passing = [name for name, value in providers.items() if value['status'] == 'PASS']
+          document = {
+              'version': '0.5.0',
+              'window': {'start': os.environ['START'], 'end': os.environ['END']},
+              'providers': providers,
+              'passing_providers': passing,
+              'status': 'PASS' if passing else 'BLOCKED',
+              'production_release': 'BLOCKED',
+          }
+          Path('reports/HISTORICAL_SAMPLE_GATE_V05.json').write_text(json.dumps(document, indent=2, sort_keys=True) + '\n')
+          PY
+          tar -czf historical-sample-v05.tar.gz state/sample reports/sample-*-v05.* reports/HISTORICAL_SAMPLE_GATE_V05.json
+          PASSING=$(python -c "import json; print(len(json.load(open('reports/HISTORICAL_SAMPLE_GATE_V05.json'))['passing_providers']))")
+          echo "passing=$PASSING" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload reproducible sample artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-sample-v05-${{ github.run_id }}
+          path: |
+            historical-sample-v05.tar.gz
+            reports/HISTORICAL_SAMPLE_GATE_V05.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Open regional/sample blocker when both providers fail
+        if: steps.sample.outputs.passing == '0'
+        shell: bash
+        run: |
+          TITLE='[P0] Public historical sample has no viable provider'
+          BODY=$(cat <<EOF
+          Both bounded 24-hour historical probes failed or produced no durable catalog/manifests.
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Inspect the artifact and logs. Do not merge by deleting the live evidence; validate regional access or add a contract-tested substitute.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,gate:needs-evidence'; fi
+      - name: Fail only when no bounded provider sample succeeds
+        if: steps.sample.outputs.passing == '0'
+        run: exit 1
