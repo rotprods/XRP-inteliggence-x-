@@ -1,0 +1,183 @@
+name: remote-status-v03
+
+on:
+  push:
+    branches: [feat/xrp-engine-foundation-v0.3]
+    paths:
+      - .bootstrap/REMOTE_STATUS_V03
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/xrp-engine-foundation-v0.3
+          fetch-depth: 0
+
+      - name: Inspect canonical remote state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          repo=rotprods/XRP-inteliggence-x-
+          if gh api "repos/$repo/contents/pyproject.toml?ref=main" >/dev/null 2>&1 \
+             && gh api "repos/$repo/contents/src/xrp_regime_engine?ref=main" >/dev/null 2>&1; then
+            main_source=true
+          else
+            main_source=false
+          fi
+          if gh release view v0.3.0-alpha --repo "$repo" >/dev/null 2>&1; then
+            release=true
+          else
+            release=false
+          fi
+          canonical_pr=$(gh pr list --repo "$repo" --head integration/xrp-engine-v0.3.0-alpha --state all --json number,state,isDraft,mergedAt,url --jq '.[0] // {}')
+          main_sha=$(gh api "repos/$repo/commits/main" --jq .sha)
+          open_prs=$(gh pr list --repo "$repo" --state open --json number,title,headRefName,url)
+          branches=$(gh api --paginate "repos/$repo/branches?per_page=100" --jq '.[].name')
+          latest_runs=$(gh run list --repo "$repo" --limit 20 --json databaseId,name,headBranch,status,conclusion,url)
+
+          mkdir -p /tmp/remote-status
+          printf '%s\n' "$canonical_pr" > /tmp/remote-status/canonical-pr.json
+          printf '%s\n' "$open_prs" > /tmp/remote-status/open-prs.json
+          printf '%s\n' "$branches" > /tmp/remote-status/branches.txt
+          printf '%s\n' "$latest_runs" > /tmp/remote-status/runs.json
+
+          echo "main_source=$main_source" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Clean superseded staging only after successful merge
+        if: steps.state.outputs.main_source == 'true' && steps.state.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          repo=rotprods/XRP-inteliggence-x-
+          for head in \
+            feat/xrp-engine-foundation-v0.3 \
+            feat/repo-governance-and-quality-v0.3 \
+            feat/data-provider-assurance-v0.3 \
+            integration/xrp-engine-v0.3.0-alpha; do
+            gh pr list --repo "$repo" --head "$head" --state open --json number --jq '.[].number' \
+              | while read -r number; do
+                  [[ -n "$number" ]] || continue
+                  gh pr comment "$number" --repo "$repo" --body "Closed after verified v0.3.0-alpha merge and prerelease publication."
+                  gh pr close "$number" --repo "$repo" || true
+                done
+          done
+
+          # Preserve the current foundation branch until this job is complete;
+          # clean all other obsolete staging refs now.
+          for encoded_ref in \
+            feat%2Frepo-governance-and-quality-v0.3 \
+            feat%2Fdata-provider-assurance-v0.3 \
+            integration%2Fxrp-engine-v0.3.0-alpha; do
+            gh api -X DELETE "repos/$repo/git/refs/heads/$encoded_ref" >/dev/null 2>&1 || true
+          done
+
+      - name: Write exact remote status to main after verified merge
+        if: steps.state.outputs.main_source == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          repo=rotprods/XRP-inteliggence-x-
+          release_state="missing"
+          if [[ "${{ steps.state.outputs.release }}" == "true" ]]; then
+            release_state="published prerelease"
+          fi
+          pr_json=$(cat /tmp/remote-status/canonical-pr.json)
+          runs_json=$(cat /tmp/remote-status/runs.json)
+          body=$(cat <<EOF
+          # Remote canonicalization status
+
+          - Repository: \`$repo\`
+          - Main SHA: \`${{ steps.state.outputs.main_sha }}\`
+          - Canonical source on main: **yes**
+          - v0.3.0-alpha: **$release_state**
+          - Operating mode: **read-only market intelligence**
+          - Production release: **BLOCKED**
+
+          ## Canonical PR snapshot
+
+          \`\`\`json
+          $pr_json
+          \`\`\`
+
+          ## Latest workflow snapshot
+
+          \`\`\`json
+          $runs_json
+          \`\`\`
+
+          ## Remaining production gates
+
+          1. sustained live-provider validation;
+          2. point-in-time historical backfill;
+          3. out-of-sample probability calibration;
+          4. minimum 30-day immutable shadow run;
+          5. SLO, incident, restore and rollback evidence.
+
+          No trading, custody, wallet signing, private-key management or order execution is permitted.
+          EOF
+          )
+          encoded=$(printf '%s' "$body" | base64 -w0)
+          path=docs/REMOTE_STATUS_V03.md
+          sha=$(gh api "repos/$repo/contents/$path?ref=main" --jq .sha 2>/dev/null || true)
+          if [[ -n "$sha" ]]; then
+            gh api -X PUT "repos/$repo/contents/$path" \
+              -f message="docs: update exact v0.3 remote status" \
+              -f content="$encoded" \
+              -f sha="$sha" \
+              -f branch=main >/dev/null
+          else
+            gh api -X PUT "repos/$repo/contents/$path" \
+              -f message="docs: record exact v0.3 remote status" \
+              -f content="$encoded" \
+              -f branch=main >/dev/null
+          fi
+
+      - name: Create or update operations status issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          repo=rotprods/XRP-inteliggence-x-
+          title="status: XRP intelligence engine v0.3 canonicalization"
+          existing=$(gh issue list --repo "$repo" --state all --search "$title in:title" --json number --jq '.[0].number // empty')
+          state="BLOCKED"
+          if [[ "${{ steps.state.outputs.main_source }}" == "true" && "${{ steps.state.outputs.release }}" == "true" ]]; then
+            state="CANONICAL_ALPHA_COMPLETE"
+          fi
+          body=$(cat <<EOF
+          ## Machine-reconciled state
+
+          - state: **$state**
+          - main source present: **${{ steps.state.outputs.main_source }}**
+          - prerelease present: **${{ steps.state.outputs.release }}**
+          - main SHA: \`${{ steps.state.outputs.main_sha }}\`
+          - production release: **BLOCKED**
+
+          The alpha can be canonical while production remains blocked by provider, point-in-time calibration, 30-day shadow and SLO evidence gates.
+          EOF
+          )
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo "$repo" --title "$title" --body "$body"
+            if [[ "$state" == "CANONICAL_ALPHA_COMPLETE" ]]; then
+              gh issue close "$existing" --repo "$repo" --reason completed || true
+            else
+              gh issue reopen "$existing" --repo "$repo" || true
+            fi
+          else
+            gh issue create --repo "$repo" --title "$title" --body "$body"
+          fi
