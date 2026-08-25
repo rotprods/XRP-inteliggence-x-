@@ -1,0 +1,538 @@
+name: pit-resume-durability-v054
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .pit-durability/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-pit-resume-durability-v054
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Replace runner with manifest-before-completion checkpoint semantics
+        shell: bash
+        run: |
+          cat > src/xrp_regime_engine/historical_backfill.py <<'PY'
+          from __future__ import annotations
+
+          from dataclasses import dataclass
+          from datetime import datetime, timezone
+          import json
+          from typing import Any, Mapping, Protocol
+
+          from xrp_regime_engine.historical_store import (
+              BackfillCheckpointStore,
+              ContentAddressedRawStore,
+              DatasetManifest,
+              DatasetPartition,
+              HistoricalRecord,
+              JSONLPartitionStore,
+              ManifestStore,
+              PointInTimeCatalog,
+              utc,
+          )
+
+
+          CHECKPOINT_SCHEMA_VERSION = 1
+
+
+          @dataclass(frozen=True, slots=True)
+          class BackfillWindow:
+              start: datetime
+              end: datetime
+              interval_seconds: int
+
+              def __post_init__(self) -> None:
+                  start = utc(self.start)
+                  end = utc(self.end)
+                  if end <= start:
+                      raise ValueError("backfill end must be later than start")
+                  if self.interval_seconds <= 0:
+                      raise ValueError("interval_seconds must be positive")
+                  object.__setattr__(self, "start", start)
+                  object.__setattr__(self, "end", end)
+
+              def to_dict(self) -> dict[str, Any]:
+                  return {
+                      "start": self.start.isoformat(),
+                      "end": self.end.isoformat(),
+                      "interval_seconds": self.interval_seconds,
+                  }
+
+
+          @dataclass(frozen=True, slots=True)
+          class NormalizedPageRecord:
+              record_id: str
+              observed_at: datetime
+              available_at: datetime
+              values: Mapping[str, Any]
+              revision: int = 0
+
+              def __post_init__(self) -> None:
+                  observed = utc(self.observed_at)
+                  available = utc(self.available_at)
+                  if not self.record_id:
+                      raise ValueError("record_id is required")
+                  if available < observed:
+                      raise ValueError("available_at cannot precede observed_at")
+                  if self.revision < 0:
+                      raise ValueError("revision must be non-negative")
+                  object.__setattr__(self, "observed_at", observed)
+                  object.__setattr__(self, "available_at", available)
+                  object.__setattr__(self, "values", dict(self.values))
+
+
+          @dataclass(frozen=True, slots=True)
+          class BackfillPage:
+              raw_payload: bytes
+              source_url: str
+              received_at: datetime
+              records: tuple[NormalizedPageRecord, ...]
+              next_cursor: Mapping[str, Any] | None
+              completed: bool
+              attributes: Mapping[str, Any]
+
+              def __post_init__(self) -> None:
+                  if not self.raw_payload:
+                      raise ValueError("backfill page raw_payload cannot be empty")
+                  object.__setattr__(self, "received_at", utc(self.received_at))
+                  object.__setattr__(self, "records", tuple(self.records))
+                  object.__setattr__(self, "attributes", dict(self.attributes))
+                  if self.completed and self.next_cursor is not None:
+                      raise ValueError("a completed page cannot expose a next cursor")
+                  if not self.completed and self.next_cursor is None:
+                      raise ValueError("an incomplete page must expose a next cursor")
+
+
+          class HistoricalAdapter(Protocol):
+              provider: str
+              source: str
+              dataset: str
+              schema_version: str
+
+              def initial_cursor(self, window: BackfillWindow) -> Mapping[str, Any]: ...
+
+              def fetch_page(
+                  self,
+                  window: BackfillWindow,
+                  cursor: Mapping[str, Any],
+              ) -> BackfillPage: ...
+
+
+          @dataclass(frozen=True, slots=True)
+          class BackfillResult:
+              job_key: str
+              dataset: str
+              pages_fetched: int
+              raw_payloads_written: int
+              records_seen: int
+              catalog_records_inserted: int
+              partitions: tuple[DatasetPartition, ...]
+              manifest_path: str | None
+              completed: bool
+              resumed: bool
+
+              def to_dict(self) -> dict[str, Any]:
+                  return {
+                      "job_key": self.job_key,
+                      "dataset": self.dataset,
+                      "pages_fetched": self.pages_fetched,
+                      "raw_payloads_written": self.raw_payloads_written,
+                      "records_seen": self.records_seen,
+                      "catalog_records_inserted": self.catalog_records_inserted,
+                      "partitions": [partition.to_dict() for partition in self.partitions],
+                      "manifest_path": self.manifest_path,
+                      "completed": self.completed,
+                      "resumed": self.resumed,
+                  }
+
+
+          def _partition_from_dict(payload: Mapping[str, Any]) -> DatasetPartition:
+              return DatasetPartition(
+                  dataset=str(payload["dataset"]),
+                  partition_key=str(payload["partition_key"]),
+                  path=str(payload["path"]),
+                  row_count=int(payload["row_count"]),
+                  byte_count=int(payload["byte_count"]),
+                  file_sha256=str(payload["file_sha256"]),
+                  minimum_observed_at=datetime.fromisoformat(str(payload["minimum_observed_at"])),
+                  maximum_observed_at=datetime.fromisoformat(str(payload["maximum_observed_at"])),
+                  minimum_available_at=datetime.fromisoformat(str(payload["minimum_available_at"])),
+                  maximum_available_at=datetime.fromisoformat(str(payload["maximum_available_at"])),
+              )
+
+
+          def _checkpoint_state(
+              *,
+              adapter_cursor: Mapping[str, Any] | None,
+              partitions: Mapping[str, DatasetPartition],
+              manifest_path: str | None,
+          ) -> dict[str, Any]:
+              return {
+                  "schema_version": CHECKPOINT_SCHEMA_VERSION,
+                  "adapter_cursor": dict(adapter_cursor) if adapter_cursor is not None else None,
+                  "partitions": [partition.to_dict() for partition in sorted(partitions.values(), key=lambda item: item.path)],
+                  "manifest_path": manifest_path,
+              }
+
+
+          class BackfillRunner:
+              def __init__(
+                  self,
+                  *,
+                  raw_store: ContentAddressedRawStore,
+                  partition_store: JSONLPartitionStore,
+                  catalog: PointInTimeCatalog,
+                  manifest_store: ManifestStore,
+                  checkpoints: BackfillCheckpointStore,
+                  max_pages: int = 10_000,
+              ) -> None:
+                  if max_pages <= 0:
+                      raise ValueError("max_pages must be positive")
+                  self.raw_store = raw_store
+                  self.partition_store = partition_store
+                  self.catalog = catalog
+                  self.manifest_store = manifest_store
+                  self.checkpoints = checkpoints
+                  self.max_pages = max_pages
+
+              @staticmethod
+              def job_key(adapter: HistoricalAdapter, window: BackfillWindow) -> str:
+                  return (
+                      f"{adapter.provider}:{adapter.dataset}:"
+                      f"{window.start.isoformat()}:{window.end.isoformat()}:{window.interval_seconds}"
+                  )
+
+              def run(self, adapter: HistoricalAdapter, window: BackfillWindow) -> BackfillResult:
+                  key = self.job_key(adapter, window)
+                  loaded = self.checkpoints.load(key)
+                  resumed = loaded is not None
+                  partitions_by_path: dict[str, DatasetPartition] = {}
+                  manifest_path: str | None = None
+
+                  if loaded is None:
+                      cursor: Mapping[str, Any] = adapter.initial_cursor(window)
+                      already_completed = False
+                  else:
+                      state, already_completed = loaded
+                      if int(state.get("schema_version", 0)) != CHECKPOINT_SCHEMA_VERSION:
+                          raise RuntimeError(
+                              "legacy checkpoint lacks partition provenance; migrate or verify it before resume"
+                          )
+                      raw_partitions = state.get("partitions", [])
+                      if not isinstance(raw_partitions, list):
+                          raise RuntimeError("checkpoint partitions must be a list")
+                      for raw_partition in raw_partitions:
+                          if not isinstance(raw_partition, Mapping):
+                              raise RuntimeError("checkpoint partition must be an object")
+                          partition = _partition_from_dict(raw_partition)
+                          partitions_by_path[partition.path] = partition
+                      stored_manifest = state.get("manifest_path")
+                      manifest_path = str(stored_manifest) if stored_manifest else None
+                      raw_cursor = state.get("adapter_cursor")
+                      cursor = dict(raw_cursor) if isinstance(raw_cursor, Mapping) else {}
+
+                  if already_completed:
+                      if manifest_path is None or not partitions_by_path:
+                          raise RuntimeError("completed checkpoint has no durable manifest or partitions")
+                      return BackfillResult(
+                          job_key=key,
+                          dataset=adapter.dataset,
+                          pages_fetched=0,
+                          raw_payloads_written=0,
+                          records_seen=0,
+                          catalog_records_inserted=0,
+                          partitions=tuple(sorted(partitions_by_path.values(), key=lambda item: item.path)),
+                          manifest_path=manifest_path,
+                          completed=True,
+                          resumed=True,
+                      )
+
+                  seen_cursors: set[str] = set()
+                  pages_fetched = 0
+                  raw_payloads_written = 0
+                  records_seen = 0
+                  catalog_inserted = 0
+                  completed = False
+
+                  while not completed:
+                      if pages_fetched >= self.max_pages:
+                          raise RuntimeError("backfill exceeded max_pages before completion")
+                      cursor_key = json.dumps(cursor, sort_keys=True, separators=(",", ":"), default=str)
+                      if cursor_key in seen_cursors:
+                          raise RuntimeError("backfill adapter produced a cursor cycle")
+                      seen_cursors.add(cursor_key)
+
+                      page = adapter.fetch_page(window, cursor)
+                      pages_fetched += 1
+                      envelope = self.raw_store.put(
+                          provider=adapter.provider,
+                          payload=page.raw_payload,
+                          received_at=page.received_at,
+                          observed_at=min((record.observed_at for record in page.records), default=None),
+                          source_url=page.source_url,
+                          media_type="application/json",
+                          attributes={
+                              "dataset": adapter.dataset,
+                              "schema_version": adapter.schema_version,
+                              "cursor": dict(cursor),
+                              **dict(page.attributes),
+                          },
+                      )
+                      raw_payloads_written += 1
+
+                      normalized = tuple(
+                          HistoricalRecord(
+                              dataset=adapter.dataset,
+                              record_id=record.record_id,
+                              observed_at=record.observed_at,
+                              available_at=record.available_at,
+                              source=adapter.source,
+                              revision=record.revision,
+                              values=record.values,
+                              raw_payload_sha256=envelope.payload_sha256,
+                          )
+                          for record in page.records
+                      )
+                      records_seen += len(normalized)
+
+                      grouped: dict[str, list[HistoricalRecord]] = {}
+                      for record in normalized:
+                          grouped.setdefault(record.observed_at.strftime("date=%Y-%m-%d"), []).append(record)
+                      for partition_key, records in sorted(grouped.items()):
+                          partition = self.partition_store.write_partition(
+                              dataset=adapter.dataset,
+                              partition_key=partition_key,
+                              records=records,
+                          )
+                          partitions_by_path[partition.path] = partition
+                          catalog_inserted += self.catalog.add_many(
+                              records,
+                              partition_path=partition.path,
+                          )
+
+                      completed = page.completed
+                      next_cursor = None if completed else dict(page.next_cursor or {})
+                      if completed:
+                          if not partitions_by_path:
+                              raise RuntimeError("backfill completed without normalized records")
+                          manifest = DatasetManifest.build(
+                              dataset=adapter.dataset,
+                              schema_version=adapter.schema_version,
+                              created_at=datetime.now(timezone.utc),
+                              partitions=tuple(partitions_by_path.values()),
+                          )
+                          manifest_path = str(self.manifest_store.put(manifest))
+                          self.checkpoints.save(
+                              key,
+                              cursor=_checkpoint_state(
+                                  adapter_cursor=None,
+                                  partitions=partitions_by_path,
+                                  manifest_path=manifest_path,
+                              ),
+                              completed=True,
+                          )
+                      else:
+                          cursor = next_cursor or {}
+                          self.checkpoints.save(
+                              key,
+                              cursor=_checkpoint_state(
+                                  adapter_cursor=cursor,
+                                  partitions=partitions_by_path,
+                                  manifest_path=None,
+                              ),
+                              completed=False,
+                          )
+
+                  return BackfillResult(
+                      job_key=key,
+                      dataset=adapter.dataset,
+                      pages_fetched=pages_fetched,
+                      raw_payloads_written=raw_payloads_written,
+                      records_seen=records_seen,
+                      catalog_records_inserted=catalog_inserted,
+                      partitions=tuple(sorted(partitions_by_path.values(), key=lambda item: item.path)),
+                      manifest_path=manifest_path,
+                      completed=True,
+                      resumed=resumed,
+                  )
+          PY
+
+      - name: Add durability and resume regression tests
+        shell: bash
+        run: |
+          cat > tests/test_pit_resume_durability_v054.py <<'PY'
+          from datetime import datetime, timedelta, timezone
+          import json
+          from pathlib import Path
+          from typing import Any, Mapping
+
+          import pytest
+
+          from xrp_regime_engine.historical_backfill import (
+              BackfillPage,
+              BackfillRunner,
+              BackfillWindow,
+              NormalizedPageRecord,
+          )
+          from xrp_regime_engine.historical_store import (
+              BackfillCheckpointStore,
+              ContentAddressedRawStore,
+              JSONLPartitionStore,
+              ManifestStore,
+              PointInTimeCatalog,
+          )
+
+          UTC = timezone.utc
+          BASE = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+          class TwoPageAdapter:
+              provider = 'test'
+              source = 'test'
+              dataset = 'xrp_usd_3600s'
+              schema_version = 'candle.v1'
+
+              def initial_cursor(self, window: BackfillWindow) -> Mapping[str, Any]:
+                  del window
+                  return {'page': 1}
+
+              def fetch_page(self, window: BackfillWindow, cursor: Mapping[str, Any]) -> BackfillPage:
+                  page = int(cursor['page'])
+                  observed = window.start + timedelta(hours=page - 1)
+                  return BackfillPage(
+                      raw_payload=json.dumps({'page': page}).encode(),
+                      source_url=f'https://api.example.test/history?page={page}',
+                      received_at=window.end + timedelta(hours=1),
+                      records=(NormalizedPageRecord(
+                          f'candle-{page}', observed, observed + timedelta(hours=1), {'close': page}
+                      ),),
+                      next_cursor={'page': 2} if page == 1 else None,
+                      completed=page == 2,
+                      attributes={'page': page},
+                  )
+
+
+          class EmptyAdapter(TwoPageAdapter):
+              def fetch_page(self, window: BackfillWindow, cursor: Mapping[str, Any]) -> BackfillPage:
+                  del cursor
+                  return BackfillPage(
+                      raw_payload=b'[]',
+                      source_url='https://api.example.test/history',
+                      received_at=window.end,
+                      records=(),
+                      next_cursor=None,
+                      completed=True,
+                      attributes={},
+                  )
+
+
+          def build_runner(root: Path, *, max_pages: int) -> BackfillRunner:
+              return BackfillRunner(
+                  raw_store=ContentAddressedRawStore(root),
+                  partition_store=JSONLPartitionStore(root),
+                  catalog=PointInTimeCatalog(root / 'catalog.sqlite'),
+                  manifest_store=ManifestStore(root),
+                  checkpoints=BackfillCheckpointStore(root / 'checkpoints.sqlite'),
+                  max_pages=max_pages,
+              )
+
+
+          def test_resume_manifest_includes_partitions_before_and_after_checkpoint(tmp_path: Path) -> None:
+              window = BackfillWindow(BASE, BASE + timedelta(hours=2), 3600)
+              with pytest.raises(RuntimeError, match='max_pages'):
+                  build_runner(tmp_path, max_pages=1).run(TwoPageAdapter(), window)
+
+              result = build_runner(tmp_path, max_pages=10).run(TwoPageAdapter(), window)
+              assert result.resumed is True
+              assert result.completed is True
+              assert len(result.partitions) == 2
+              assert result.manifest_path is not None
+              manifest = json.loads((tmp_path / result.manifest_path).read_text())
+              assert manifest['total_rows'] == 2
+              assert len(manifest['partitions']) == 2
+
+              no_op = build_runner(tmp_path, max_pages=10).run(TwoPageAdapter(), window)
+              assert no_op.pages_fetched == 0
+              assert no_op.manifest_path == result.manifest_path
+              assert len(no_op.partitions) == 2
+
+
+          def test_completed_empty_backfill_does_not_commit_completed_checkpoint(tmp_path: Path) -> None:
+              window = BackfillWindow(BASE, BASE + timedelta(hours=1), 3600)
+              engine = build_runner(tmp_path, max_pages=10)
+              key = engine.job_key(EmptyAdapter(), window)
+              with pytest.raises(RuntimeError, match='without normalized records'):
+                  engine.run(EmptyAdapter(), window)
+              assert engine.checkpoints.load(key) is None
+
+
+          def test_legacy_checkpoint_is_blocked_instead_of_silently_losing_partitions(tmp_path: Path) -> None:
+              window = BackfillWindow(BASE, BASE + timedelta(hours=2), 3600)
+              engine = build_runner(tmp_path, max_pages=10)
+              key = engine.job_key(TwoPageAdapter(), window)
+              engine.checkpoints.save(key, cursor={'page': 2}, completed=False)
+              with pytest.raises(RuntimeError, match='legacy checkpoint'):
+                  engine.run(TwoPageAdapter(), window)
+          PY
+          rm -rf .pit-durability
+
+      - name: Install, normalize and validate durability semantics
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit
+          ruff check --fix src/xrp_regime_engine/historical_backfill.py tests/test_pit_resume_durability_v054.py tests/test_historical_store_v05.py tests/test_historical_edge_cases_v05.py || true
+          ruff format src/xrp_regime_engine/historical_backfill.py tests/test_pit_resume_durability_v054.py tests/test_historical_store_v05.py tests/test_historical_edge_cases_v05.py
+          python -m compileall -q src tests scripts
+          ruff check src/xrp_regime_engine/historical_backfill.py tests/test_pit_resume_durability_v054.py tests/test_historical_store_v05.py tests/test_historical_edge_cases_v05.py
+          ruff format --check src/xrp_regime_engine/historical_backfill.py tests/test_pit_resume_durability_v054.py tests/test_historical_store_v05.py tests/test_historical_edge_cases_v05.py
+          mypy src/xrp_regime_engine/historical_backfill.py
+          python -m pytest -q tests/test_pit_resume_durability_v054.py tests/test_historical_store_v05.py tests/test_historical_edge_cases_v05.py \
+            --cov=xrp_regime_engine.historical_backfill \
+            --cov-report=term-missing \
+            --cov-report=json:reports/pit-resume-coverage-v054.json \
+            --cov-fail-under=90
+          bandit -q -r src/xrp_regime_engine/historical_backfill.py
+
+      - name: Commit passing durability patch
+        shell: bash
+        run: |
+          printf '{"version":"0.5.4","resume_manifest":"PASS","checkpoint_after_manifest":"PASS","empty_backfill_fail_closed":"PASS","coverage_threshold":90,"production_release":"BLOCKED"}\n' > reports/PIT_RESUME_DURABILITY_GATE_V054.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(research): make PIT resume manifests and final checkpoints durable' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open durability blocker
+        if: failure()
+        shell: bash
+        run: |
+          gh issue create --title '[P0] Resolve v0.5.4 PIT resume durability gate' \
+            --body 'The backfill runner failed resume-manifest, manifest-before-completion, empty-result or coverage semantics. Inspect this run; do not merge a runner that can lose pre-checkpoint partitions or mark an empty dataset complete.' \
+            --label 'priority:p0,area:data,type:research,gate:blocked' || true
