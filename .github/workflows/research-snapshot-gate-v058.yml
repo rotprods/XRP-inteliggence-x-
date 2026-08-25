@@ -1,0 +1,180 @@
+name: research-snapshot-gate-v058
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .snapshot-quality/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-research-snapshot-v058
+  cancel-in-progress: false
+
+jobs:
+  normalize-and-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install and normalize snapshot surface
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit
+          ruff check --fix \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/build_research_snapshot_v05.py \
+            tests/test_research_snapshot_v05.py \
+            tests/test_build_research_snapshot_cli_v05.py || true
+          ruff format \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/build_research_snapshot_v05.py \
+            tests/test_research_snapshot_v05.py \
+            tests/test_build_research_snapshot_cli_v05.py
+          rm -rf .snapshot-quality
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): normalize point-in-time snapshot surface' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Execute strict snapshot gates
+        id: gate
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports
+          python -m compileall -q src tests scripts > reports/snapshot-compile.log 2>&1; COMPILE=$?
+          ruff check \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/build_research_snapshot_v05.py \
+            tests/test_research_snapshot_v05.py \
+            tests/test_build_research_snapshot_cli_v05.py > reports/snapshot-ruff.log 2>&1; RUFF=$?
+          ruff format --check \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/build_research_snapshot_v05.py \
+            tests/test_research_snapshot_v05.py \
+            tests/test_build_research_snapshot_cli_v05.py > reports/snapshot-format.log 2>&1; FORMAT=$?
+          mypy \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/build_research_snapshot_v05.py > reports/snapshot-mypy.log 2>&1; MYPY=$?
+          python -m pytest -q \
+            tests/test_research_snapshot_v05.py \
+            tests/test_build_research_snapshot_cli_v05.py \
+            --cov=xrp_regime_engine.research_snapshot \
+            --cov=scripts.build_research_snapshot_v05 \
+            --cov-report=term-missing \
+            --cov-report=json:reports/snapshot-coverage-v058.json \
+            --cov-fail-under=90 > reports/snapshot-pytest.log 2>&1; PYTEST=$?
+          bandit -q -r \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/build_research_snapshot_v05.py > reports/snapshot-bandit.log 2>&1; BANDIT=$?
+          python - <<PY
+          import json
+          from pathlib import Path
+          gates = {
+              'compile': $COMPILE, 'ruff': $RUFF, 'format': $FORMAT,
+              'mypy': $MYPY, 'pytest_coverage_90': $PYTEST, 'bandit': $BANDIT,
+          }
+          status = 'PASS' if all(value == 0 for value in gates.values()) else 'FAIL'
+          Path('reports/RESEARCH_SNAPSHOT_REQUIRED_GATES_V058.json').write_text(
+              json.dumps({'gates': gates, 'status': status, 'production_release': 'BLOCKED'}, indent=2, sort_keys=True) + '\n'
+          )
+          with open('$GITHUB_OUTPUT', 'a', encoding='utf-8') as handle:
+              handle.write(f'status={status}\n')
+          PY
+          exit 0
+
+      - name: Validate profile contracts
+        id: profile
+        shell: bash
+        run: |
+          set +e
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          document = json.loads(Path('config/research_snapshot_profiles_v05.json').read_text())
+          profiles = document['profiles']
+          assert len(profiles) >= 2
+          ids = [profile['id'] for profile in profiles]
+          assert len(ids) == len(set(ids))
+          for profile in profiles:
+              requirements = profile['requirements']
+              datasets = [item['dataset'] for item in requirements]
+              assert len(datasets) == len(set(datasets))
+              for item in requirements:
+                  assert item['lookback_seconds'] > 0
+                  assert item['minimum_records'] >= 0
+                  assert item['maximum_latest_age_seconds'] >= 0
+          cocoa = [
+              item
+              for profile in profiles
+              for item in profile['requirements']
+              if item['dataset'] == 'global_cocoa_price_monthly'
+          ]
+          assert cocoa and all(item.get('weight') == 0.0 and item.get('exploratory') is True for item in cocoa)
+          assert document['hard_rules']['usd_usdt_silent_merge'] is False
+          PY
+          STATUS=$?
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist formal snapshot gate
+        shell: bash
+        env:
+          ENGINEERING: ${{ steps.gate.outputs.status }}
+          PROFILE: ${{ steps.profile.outputs.status }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          engineering = os.environ['ENGINEERING']
+          profile = int(os.environ['PROFILE'])
+          payload = {
+              'version': '0.5.8',
+              'snapshot_engineering_gate': engineering,
+              'profile_contract': 'PASS' if profile == 0 else 'FAIL',
+              'mergeable_code': engineering == 'PASS' and profile == 0,
+              'production_release': 'BLOCKED',
+              'blocked_when': [
+                  'required dataset missing', 'required dataset stale',
+                  'minimum records unmet', 'future available_at',
+                  'duplicate dataset requirement', 'snapshot hash mismatch',
+              ],
+          }
+          Path('reports/RESEARCH_SNAPSHOT_GATE_V058.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): persist formal PIT snapshot gate' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open snapshot blocker
+        if: steps.gate.outputs.status != 'PASS' || steps.profile.outputs.status != '0'
+        shell: bash
+        run: |
+          gh issue create --title '[P0] v0.5.8 research snapshot gate blocked' \
+            --body 'Point-in-time availability, determinism, freshness, integrity, profile, typing, coverage or security failed. Do not build model features from an unverified snapshot.' \
+            --label 'priority:p0,area:data,type:research,gate:blocked' || true
+
+      - name: Enforce snapshot gate
+        if: steps.gate.outputs.status != 'PASS' || steps.profile.outputs.status != '0'
+        run: exit 1
