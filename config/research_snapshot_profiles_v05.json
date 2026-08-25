@@ -1,0 +1,133 @@
+{
+  "version": "0.5.0",
+  "profiles": [
+    {
+      "id": "xrp_hourly_spot_core",
+      "description": "Minimal hourly XRP market snapshot without cross-quote mixing",
+      "requirements": [
+        {
+          "dataset": "xrp_usd_spot_3600s",
+          "lookback_seconds": 2592000,
+          "minimum_records": 168,
+          "maximum_latest_age_seconds": 7200,
+          "required": true
+        },
+        {
+          "dataset": "xrp_usdt_spot_3600s",
+          "lookback_seconds": 2592000,
+          "minimum_records": 168,
+          "maximum_latest_age_seconds": 7200,
+          "required": false,
+          "quality_flags": ["STABLECOIN_QUOTE"]
+        }
+      ]
+    },
+    {
+      "id": "xrp_cross_asset_daily_core",
+      "description": "Daily XRP macro-regime snapshot using point-in-time macro vintages",
+      "requirements": [
+        {
+          "dataset": "xrp_usd_spot_3600s",
+          "lookback_seconds": 15552000,
+          "minimum_records": 2160,
+          "maximum_latest_age_seconds": 7200,
+          "required": true
+        },
+        {
+          "dataset": "us_treasury_2y_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": true
+        },
+        {
+          "dataset": "us_treasury_10y_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": true
+        },
+        {
+          "dataset": "us_real_yield_10y_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": true
+        },
+        {
+          "dataset": "broad_us_dollar_index_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": true
+        },
+        {
+          "dataset": "nasdaq100_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": true
+        },
+        {
+          "dataset": "vix_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": true
+        },
+        {
+          "dataset": "chicago_financial_conditions_weekly",
+          "lookback_seconds": 94608000,
+          "minimum_records": 52,
+          "maximum_latest_age_seconds": 1209600,
+          "required": true
+        },
+        {
+          "dataset": "us_m2_monthly",
+          "lookback_seconds": 157680000,
+          "minimum_records": 36,
+          "maximum_latest_age_seconds": 5356800,
+          "required": true
+        },
+        {
+          "dataset": "wti_crude_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": false
+        },
+        {
+          "dataset": "us_regular_gasoline_weekly",
+          "lookback_seconds": 94608000,
+          "minimum_records": 52,
+          "maximum_latest_age_seconds": 1209600,
+          "required": false
+        },
+        {
+          "dataset": "henry_hub_natural_gas_daily",
+          "lookback_seconds": 31536000,
+          "minimum_records": 120,
+          "maximum_latest_age_seconds": 432000,
+          "required": false
+        },
+        {
+          "dataset": "global_cocoa_price_monthly",
+          "lookback_seconds": 315360000,
+          "minimum_records": 60,
+          "maximum_latest_age_seconds": 7948800,
+          "required": false,
+          "weight": 0.0,
+          "exploratory": true
+        }
+      ]
+    }
+  ],
+  "hard_rules": {
+    "required_dataset_missing": "BLOCK",
+    "required_dataset_stale": "BLOCK",
+    "future_available_at": "BLOCK",
+    "duplicate_profile_dataset": "BLOCK",
+    "cocoa_weight": 0.0,
+    "usd_usdt_silent_merge": false
+  }
+}
