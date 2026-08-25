@@ -1,0 +1,173 @@
+name: serial-pit-convergence-v059
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .pit-serial/READY
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: xrp-serial-pit-convergence-v059
+  cancel-in-progress: false
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: feat/v0.5-point-in-time-backfill
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+
+      - name: Wait for stable component evidence
+        shell: bash
+        run: |
+          required=(
+            reports/MERGE_GATE_V04.json
+            reports/MERGE_GATE_PROVIDER_V04.json
+            reports/HISTORICAL_STORE_PATCH_GATE_V051.json
+            reports/HISTORICAL_TYPING_GATE_V052.json
+            reports/PIT_RESUME_DURABILITY_GATE_V054.json
+            reports/FRED_VINTAGE_GATE_V055.json
+            reports/FRED_VINTAGE_DATE_GATE_V056.json
+            reports/DATA_GOVERNANCE_GATE_V056.json
+            reports/HISTORICAL_QUALITY_GATE_V057.json
+            reports/RESEARCH_SNAPSHOT_GATE_V058.json
+          )
+          stable=0
+          previous_sha=''
+          for attempt in $(seq 1 240); do
+            git fetch origin "$BRANCH" main --prune
+            git reset --hard "origin/$BRANCH"
+            current_sha=$(git rev-parse HEAD)
+            missing=0
+            for path in "${required[@]}"; do
+              if [ ! -f "$path" ]; then missing=$((missing+1)); fi
+            done
+            active=$(gh run list --branch "$BRANCH" --limit 100 \
+              --json workflowName,status \
+              --jq '[.[] | select(.status == "in_progress" or .status == "queued") | select(.workflowName != "serial-pit-convergence-v059")] | length')
+            if git merge-base --is-ancestor origin/main HEAD \
+              && [ "$missing" -eq 0 ] \
+              && [ "$active" -eq 0 ] \
+              && [ "$current_sha" = "$previous_sha" ]; then
+              stable=$((stable+1))
+            else
+              stable=0
+            fi
+            if [ "$stable" -ge 2 ]; then
+              printf 'stable_sha=%s\n' "$current_sha" > /tmp/pit-stable.txt
+              exit 0
+            fi
+            previous_sha=$current_sha
+            echo "waiting for stable PIT branch: missing=${missing}, active=${active}, stable=${stable}/2, attempt=${attempt}/240"
+            sleep 15
+          done
+          echo 'v0.5 branch did not reach stable component evidence within the convergence window' > /tmp/pit-serial-blockers.txt
+          exit 1
+
+      - name: Trigger formal release gate on stable SHA
+        shell: bash
+        run: |
+          git fetch origin "$BRANCH" --prune
+          git reset --hard "origin/$BRANCH"
+          mkdir -p .pit-release
+          printf 'serial_retry=%s\nsha=%s\n' "$(date -u +%s%N)" "$(git rev-parse HEAD)" > .pit-release/READY
+          rm -rf .pit-serial
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): serially trigger final v0.5 release gate'
+          git push origin HEAD:"$BRANCH"
+          echo "$(git rev-parse HEAD)" > /tmp/pit-release-trigger-sha
+
+      - name: Wait for formal release workflow
+        shell: bash
+        run: |
+          sleep 8
+          RUN_ID=''
+          for attempt in $(seq 1 40); do
+            RUN_ID=$(gh run list --workflow pit-release-gate-v059.yml --branch "$BRANCH" --limit 10 \
+              --json databaseId,status \
+              --jq '.[0].databaseId // empty')
+            if [ -n "$RUN_ID" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$RUN_ID" ]; then
+            echo 'formal PIT release workflow did not start' > /tmp/pit-serial-blockers.txt
+            exit 1
+          fi
+          echo "$RUN_ID" > /tmp/pit-release-run-id
+          gh run watch "$RUN_ID" --exit-status
+          git fetch origin "$BRANCH" --prune
+          git reset --hard "origin/$BRANCH"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          gate = json.loads(Path('reports/PIT_RELEASE_GATE_V059.json').read_text())
+          assert gate['engineering_release_gate'] == 'PASS'
+          assert gate['production_release'] == 'BLOCKED'
+          PY
+
+      - name: Trigger merge controller only after release PASS
+        shell: bash
+        run: |
+          mkdir -p .merge-pit
+          printf 'serial_retry=%s\nsha=%s\n' "$(date -u +%s%N)" "$(git rev-parse HEAD)" > .merge-pit/READY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): serially trigger v0.5 merge controller'
+          git push origin HEAD:"$BRANCH"
+
+      - name: Wait for merge controller conclusion
+        shell: bash
+        run: |
+          sleep 8
+          RUN_ID=''
+          for attempt in $(seq 1 40); do
+            RUN_ID=$(gh run list --workflow merge-pit-v059.yml --branch "$BRANCH" --limit 10 \
+              --json databaseId,status \
+              --jq '.[0].databaseId // empty')
+            if [ -n "$RUN_ID" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$RUN_ID" ]; then
+            echo 'v0.5 merge workflow did not start' > /tmp/pit-serial-blockers.txt
+            exit 1
+          fi
+          echo "$RUN_ID" > /tmp/pit-merge-run-id
+          gh run watch "$RUN_ID" --exit-status
+          gh release view v0.5.0-beta.1 --json tagName,isPrerelease,targetCommitish,url
+          gh pr list --state merged --search 'head:feat/v0.5-point-in-time-backfill' --json number,title,mergedAt,url
+
+      - name: Open serial convergence blocker
+        if: failure()
+        shell: bash
+        run: |
+          TITLE='[P0] Serial v0.5 convergence blocked'
+          DETAILS=$(cat /tmp/pit-serial-blockers.txt 2>/dev/null || echo 'A component, release or merge workflow failed; inspect this orchestration run and its child run IDs.')
+          BODY=$(cat <<EOF
+          The serial v0.5 controller stopped before a verified merge/release.
+
+          ${DETAILS}
+
+          Release run: $(cat /tmp/pit-release-run-id 2>/dev/null || echo 'not started')
+          Merge run: $(cat /tmp/pit-merge-run-id 2>/dev/null || echo 'not started')
+
+          Do not bypass the component or release gates.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,gate:blocked'; fi
