@@ -1,0 +1,97 @@
+name: historical-store-patch-v051
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .historical-patch/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: historical-store-patch-v051
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Patch provenance-envelope and URL-redaction invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/xrp_regime_engine/historical_store.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'from urllib.parse import urlsplit, urlunsplit',
+              'from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit',
+          )
+
+          old_url = '''def sanitize_source_url(url: str) -> str:\n    parsed = urlsplit(url)\n    if parsed.scheme not in {"https", "http"} or not parsed.hostname:\n        raise ValueError("source_url must be an absolute HTTP(S) URL")\n    if parsed.username or parsed.password:\n        raise ValueError("credentials are forbidden in source URLs")\n    netloc = parsed.hostname\n    if parsed.port:\n        netloc = f"{netloc}:{parsed.port}"\n    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, ""))\n'''
+          new_url = '''def sanitize_source_url(url: str) -> str:\n    parsed = urlsplit(url)\n    if parsed.scheme not in {"https", "http"} or not parsed.hostname:\n        raise ValueError("source_url must be an absolute HTTP(S) URL")\n    if parsed.username or parsed.password:\n        raise ValueError("credentials are forbidden in source URLs")\n    netloc = parsed.hostname\n    if parsed.port:\n        netloc = f"{netloc}:{parsed.port}"\n    sensitive_tokens = ("key", "token", "secret", "signature", "authorization", "password")\n    query = urlencode(\n        [\n            (name, "[REDACTED]" if any(token in name.lower() for token in sensitive_tokens) else value)\n            for name, value in parse_qsl(parsed.query, keep_blank_values=True)\n        ],\n        doseq=True,\n    )\n    return urlunsplit((parsed.scheme, netloc, parsed.path, query, ""))\n'''
+          if old_url not in text:
+              raise SystemExit('sanitize_source_url block not found')
+          text = text.replace(old_url, new_url, 1)
+
+          old_store = '''        digest = sha256_hex(payload)\n        partition = self.root / "raw" / provider / received.strftime("%Y/%m/%d")\n        payload_path = partition / f"{digest}.bin"\n        metadata_path = partition / f"{digest}.json"\n\n        if payload_path.exists():\n            existing = payload_path.read_bytes()\n            if sha256_hex(existing) != digest or existing != payload:\n                raise RuntimeError("content-addressed payload collision or corruption")\n        else:\n            atomic_write(payload_path, payload)\n\n        envelope = RawPayloadEnvelope(\n            provider=provider,\n            received_at=received,\n            observed_at=observed,\n            source_url=sanitize_source_url(source_url),\n            media_type=media_type,\n            payload_sha256=digest,\n            byte_count=len(payload),\n            payload_path=str(payload_path.relative_to(self.root)),\n            metadata_path=str(metadata_path.relative_to(self.root)),\n            attributes=dict(attributes or {}),\n        )\n        metadata_bytes = canonical_json_bytes(envelope.to_dict()) + b"\\n"\n        if metadata_path.exists():\n            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))\n            if existing_metadata != envelope.to_dict():\n                raise RuntimeError("immutable raw metadata already exists with different content")\n        else:\n            atomic_write(metadata_path, metadata_bytes)\n        return envelope\n'''
+          new_store = '''        digest = sha256_hex(payload)\n        partition = self.root / "raw" / provider / received.strftime("%Y/%m/%d")\n        payload_path = partition / f"{digest}.bin"\n\n        if payload_path.exists():\n            existing = payload_path.read_bytes()\n            if sha256_hex(existing) != digest or existing != payload:\n                raise RuntimeError("content-addressed payload collision or corruption")\n        else:\n            atomic_write(payload_path, payload)\n\n        sanitized_url = sanitize_source_url(source_url)\n        envelope_identity = {\n            "provider": provider,\n            "received_at": received.isoformat(),\n            "observed_at": observed.isoformat() if observed else None,\n            "source_url": sanitized_url,\n            "media_type": media_type,\n            "payload_sha256": digest,\n            "byte_count": len(payload),\n            "attributes": dict(attributes or {}),\n        }\n        envelope_digest = sha256_hex(canonical_json_bytes(envelope_identity))\n        metadata_path = partition / f"{digest}-{envelope_digest}.json"\n        envelope = RawPayloadEnvelope(\n            provider=provider,\n            received_at=received,\n            observed_at=observed,\n            source_url=sanitized_url,\n            media_type=media_type,\n            payload_sha256=digest,\n            byte_count=len(payload),\n            payload_path=str(payload_path.relative_to(self.root)),\n            metadata_path=str(metadata_path.relative_to(self.root)),\n            attributes=dict(attributes or {}),\n        )\n        metadata_bytes = canonical_json_bytes(envelope.to_dict()) + b"\\n"\n        if metadata_path.exists():\n            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))\n            if existing_metadata != envelope.to_dict():\n                raise RuntimeError("immutable raw metadata already exists with different content")\n        else:\n            atomic_write(metadata_path, metadata_bytes)\n        return envelope\n'''
+          if old_store not in text:
+              raise SystemExit('ContentAddressedRawStore.put block not found')
+          path.write_text(text.replace(old_store, new_store, 1), encoding='utf-8')
+          PY
+          rm -rf .historical-patch
+
+      - name: Install, normalize and validate
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx
+          ruff check --fix src/xrp_regime_engine/historical_store.py tests/test_historical_store_v05.py tests/test_historical_store_envelopes_v051.py || true
+          ruff format src/xrp_regime_engine/historical_store.py tests/test_historical_store_v05.py tests/test_historical_store_envelopes_v051.py
+          python -m compileall -q src tests scripts
+          ruff check src/xrp_regime_engine/historical_store.py tests/test_historical_store_v05.py tests/test_historical_store_envelopes_v051.py
+          ruff format --check src/xrp_regime_engine/historical_store.py tests/test_historical_store_v05.py tests/test_historical_store_envelopes_v051.py
+          mypy src/xrp_regime_engine/historical_store.py
+          python -m pytest -q tests/test_historical_store_v05.py tests/test_historical_store_envelopes_v051.py \
+            --cov=xrp_regime_engine.historical_store \
+            --cov-report=term-missing \
+            --cov-report=json:reports/historical-store-coverage-v051.json \
+            --cov-fail-under=90
+          bandit -q -r src/xrp_regime_engine/historical_store.py
+
+      - name: Commit passing historical-store patch
+        shell: bash
+        run: |
+          printf '{"version":"0.5.1","multi_envelope":"PASS","query_redaction":"PASS","coverage_threshold":90,"production_release":"BLOCKED"}\n' > reports/HISTORICAL_STORE_PATCH_GATE_V051.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(data): separate content objects from immutable provenance envelopes' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open blocker on invariant failure
+        if: failure()
+        shell: bash
+        run: |
+          gh issue create --title '[P0] Resolve v0.5.1 historical-store invariant gate' \
+            --body 'The multi-envelope, query-redaction, typing, coverage or security gate failed. Do not weaken immutable provenance or redaction semantics; inspect this workflow run and remediate with tests.' \
+            --label 'priority:p0,area:data,area:security,gate:blocked' || true
