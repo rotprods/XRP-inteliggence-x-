@@ -1,0 +1,156 @@
+name: data-governance-gate-v056
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .data-governance/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-data-governance-v056
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+
+      - name: Validate licence, retention and separation contracts
+        id: gate
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          failures = []
+          warnings = []
+          licence = json.loads(Path('config/source_licence_registry_v05.json').read_text())
+          retention = json.loads(Path('config/data_retention_v05.json').read_text())
+          fred = json.loads(Path('config/fred_series_v05.json').read_text())
+
+          allowed_statuses = {'REVIEW_REQUIRED', 'APPROVED', 'REJECTED', 'EXPIRED'}
+          sources = licence.get('sources', [])
+          if len(sources) < 8:
+              failures.append('source licence registry is incomplete')
+          identifiers = []
+          for source in sources:
+              source_id = source.get('source_id')
+              identifiers.append(source_id)
+              if source.get('licence_status') not in allowed_statuses:
+                  failures.append(f'{source_id}: invalid licence status')
+              terms = urlparse(str(source.get('terms_url', '')))
+              if terms.scheme != 'https' or not terms.hostname:
+                  failures.append(f'{source_id}: terms URL is not absolute HTTPS')
+              if not source.get('review_owner'):
+                  failures.append(f'{source_id}: no review owner')
+              if source.get('licence_status') != 'APPROVED':
+                  warnings.append(f'{source_id}: production use unresolved')
+          if len(identifiers) != len(set(identifiers)):
+              failures.append('duplicate source_id in licence registry')
+
+          classes = {item.get('class') for item in retention.get('retention', [])}
+          required_classes = {
+              'raw_public_payload', 'normalized_market_record', 'dataset_manifest',
+              'provider_health_probe', 'shadow_prediction', 'audit_log', 'secret_value',
+          }
+          if not required_classes.issubset(classes):
+              failures.append('retention registry is missing required data classes')
+          rules = retention.get('hard_rules', {})
+          for rule in (
+              'wallet_secrets_in_system', 'personal_financial_context_in_market_engine',
+              'silent_data_deletion', 'secret_values_in_logs_or_manifests',
+              'retention_without_licence_review_in_production',
+          ):
+              if rules.get(rule) is not False:
+                  failures.append(f'hard rule {rule} is not false')
+
+          cocoa = next((item for item in fred.get('series', []) if item.get('series_id') == 'PCOCOUSDM'), None)
+          if not cocoa or cocoa.get('weight') != 0.0 or cocoa.get('exploratory') is not True:
+              failures.append('cocoa must remain exploratory with zero initial weight')
+
+          forbidden_terms = ('seed phrase', 'private key value', 'exchange password value')
+          scanned = '\n'.join(
+              path.read_text(encoding='utf-8', errors='ignore').lower()
+              for path in Path('state').rglob('*') if path.is_file()
+          ) if Path('state').exists() else ''
+          for term in forbidden_terms:
+              if term in scanned:
+                  failures.append(f'forbidden secret material in state: {term}')
+
+          production_status = 'BLOCKED' if warnings else 'ELIGIBLE_FOR_FURTHER_GATES'
+          report = {
+              'version': '0.5.6',
+              'engineering_governance': 'PASS' if not failures else 'FAIL',
+              'production_source_approval': production_status,
+              'source_count': len(sources),
+              'unresolved_source_count': len(warnings),
+              'warnings': warnings,
+              'failures': failures,
+              'production_release': 'BLOCKED',
+          }
+          Path('reports/DATA_GOVERNANCE_GATE_V056.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          if failures:
+              raise SystemExit('; '.join(failures))
+          PY
+          STATUS=$?
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Remove trigger and persist gate
+        shell: bash
+        run: |
+          rm -rf .data-governance
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(data): persist licence and retention governance gate' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open source-review backlog
+        if: steps.gate.outputs.status == '0'
+        shell: bash
+        run: |
+          TITLE='[P1] Complete source licence and retention approvals'
+          BODY=$(cat <<'EOF'
+          Technical ingestion is not production approval. Resolve each `REVIEW_REQUIRED` entry in `config/source_licence_registry_v05.json` with:
+
+          - applicable terms and jurisdiction;
+          - internal research permission;
+          - production processing permission;
+          - redistribution/derived-data rights;
+          - retention limit;
+          - reviewer, review date and evidence.
+
+          Production remains blocked until every enabled source is approved.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p1,area:data,type:governance,gate:needs-evidence'; fi
+
+      - name: Open governance blocker
+        if: steps.gate.outputs.status != '0'
+        shell: bash
+        run: |
+          gh issue create --title '[P0] v0.5.6 data-governance contract failed' \
+            --body 'Licence registry, retention policy, secret separation or exploratory-variable constraints failed. Inspect `reports/DATA_GOVERNANCE_GATE_V056.json`; do not enable sources without an approved governance record.' \
+            --label 'priority:p0,area:data,type:governance,gate:blocked' || true
+
+      - name: Enforce governance contract
+        if: steps.gate.outputs.status != '0'
+        run: exit 1
