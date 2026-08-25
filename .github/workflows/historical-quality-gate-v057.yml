@@ -1,0 +1,144 @@
+name: historical-quality-gate-v057
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .historical-quality/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-historical-quality-v057
+  cancel-in-progress: false
+
+jobs:
+  normalize-and-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install and normalize historical-quality surface
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit
+          ruff check --fix \
+            src/xrp_regime_engine/historical_quality.py \
+            scripts/audit_historical_candles_v05.py \
+            tests/test_historical_quality_v05.py \
+            tests/test_audit_historical_candles_cli_v05.py || true
+          ruff format \
+            src/xrp_regime_engine/historical_quality.py \
+            scripts/audit_historical_candles_v05.py \
+            tests/test_historical_quality_v05.py \
+            tests/test_audit_historical_candles_cli_v05.py
+          rm -rf .historical-quality
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): normalize historical-quality audit surface' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Execute strict quality-auditor gates
+        id: gate
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports
+          python -m compileall -q src tests scripts > reports/historical-quality-compile.log 2>&1; COMPILE=$?
+          ruff check \
+            src/xrp_regime_engine/historical_quality.py \
+            scripts/audit_historical_candles_v05.py \
+            tests/test_historical_quality_v05.py \
+            tests/test_audit_historical_candles_cli_v05.py > reports/historical-quality-ruff.log 2>&1; RUFF=$?
+          ruff format --check \
+            src/xrp_regime_engine/historical_quality.py \
+            scripts/audit_historical_candles_v05.py \
+            tests/test_historical_quality_v05.py \
+            tests/test_audit_historical_candles_cli_v05.py > reports/historical-quality-format.log 2>&1; FORMAT=$?
+          mypy \
+            src/xrp_regime_engine/historical_quality.py \
+            scripts/audit_historical_candles_v05.py > reports/historical-quality-mypy.log 2>&1; MYPY=$?
+          python -m pytest -q \
+            tests/test_historical_quality_v05.py \
+            tests/test_audit_historical_candles_cli_v05.py \
+            --cov=xrp_regime_engine.historical_quality \
+            --cov=scripts.audit_historical_candles_v05 \
+            --cov-report=term-missing \
+            --cov-report=json:reports/historical-quality-coverage-v057.json \
+            --cov-fail-under=90 > reports/historical-quality-pytest.log 2>&1; PYTEST=$?
+          bandit -q -r \
+            src/xrp_regime_engine/historical_quality.py \
+            scripts/audit_historical_candles_v05.py > reports/historical-quality-bandit.log 2>&1; BANDIT=$?
+          python - <<PY
+          import json
+          from pathlib import Path
+          gates = {
+              'compile': $COMPILE, 'ruff': $RUFF, 'format': $FORMAT,
+              'mypy': $MYPY, 'pytest_coverage_90': $PYTEST, 'bandit': $BANDIT,
+          }
+          status = 'PASS' if all(value == 0 for value in gates.values()) else 'FAIL'
+          Path('reports/HISTORICAL_QUALITY_REQUIRED_GATES_V057.json').write_text(
+              json.dumps({'gates': gates, 'status': status, 'production_release': 'BLOCKED'}, indent=2, sort_keys=True) + '\n'
+          )
+          with open('$GITHUB_OUTPUT', 'a', encoding='utf-8') as handle:
+              handle.write(f'status={status}\n')
+          PY
+          exit 0
+
+      - name: Persist formal historical-quality gate
+        shell: bash
+        env:
+          STATUS: ${{ steps.gate.outputs.status }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          status = os.environ['STATUS']
+          payload = {
+              'version': '0.5.7',
+              'historical_quality_gate': status,
+              'mergeable_code': status == 'PASS',
+              'required_for_dataset_completion': True,
+              'production_release': 'BLOCKED',
+              'audited_dimensions': [
+                  'manifest_integrity', 'partition_integrity', 'missing_intervals',
+                  'off_grid_timestamps', 'multiple_revisions', 'OHLCV_constraints',
+                  'early_availability_leakage', 'source_and_raw_payload_coverage',
+              ],
+          }
+          Path('reports/HISTORICAL_QUALITY_GATE_V057.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): persist formal historical-quality gate' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open quality-auditor blocker
+        if: steps.gate.outputs.status != 'PASS'
+        shell: bash
+        run: |
+          gh issue create --title '[P0] v0.5.7 historical-quality gate blocked' \
+            --body 'Manifest integrity, completeness, OHLCV, leakage, typing, coverage or security validation failed. Inspect branch reports; a dataset cannot be considered complete without this audit.' \
+            --label 'priority:p0,area:data,type:research,gate:blocked' || true
+
+      - name: Enforce quality gate
+        if: steps.gate.outputs.status != 'PASS'
+        run: exit 1
