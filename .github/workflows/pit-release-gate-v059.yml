@@ -1,0 +1,318 @@
+name: pit-release-gate-v059
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .pit-release/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-pit-release-gate-v059
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: feat/v0.5-point-in-time-backfill
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Wait for component evidence and canonical base
+        shell: bash
+        run: |
+          required=(
+            reports/MERGE_GATE_V04.json
+            reports/MERGE_GATE_PROVIDER_V04.json
+            reports/HISTORICAL_STORE_PATCH_GATE_V051.json
+            reports/HISTORICAL_TYPING_GATE_V052.json
+            reports/PIT_RESUME_DURABILITY_GATE_V054.json
+            reports/FRED_VINTAGE_GATE_V055.json
+            reports/FRED_VINTAGE_DATE_GATE_V056.json
+            reports/DATA_GOVERNANCE_GATE_V056.json
+            reports/HISTORICAL_QUALITY_GATE_V057.json
+            reports/RESEARCH_SNAPSHOT_GATE_V058.json
+          )
+          for attempt in $(seq 1 120); do
+            git fetch origin "$BRANCH" main --prune
+            git reset --hard "origin/$BRANCH"
+            missing=0
+            for path in "${required[@]}"; do
+              if [ ! -f "$path" ]; then missing=$((missing+1)); fi
+            done
+            if git merge-base --is-ancestor origin/main HEAD && [ "$missing" -eq 0 ]; then
+              exit 0
+            fi
+            echo "waiting for component evidence/base sync: missing=${missing}, attempt=${attempt}/120"
+            sleep 15
+          done
+          printf 'component evidence or canonical main ancestry missing\n' > /tmp/pit-release-blockers.txt
+          exit 1
+
+      - name: Validate component reports, contracts and hard boundaries
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast, json
+          from pathlib import Path
+
+          failures = []
+          reports = {
+              'alpha': ('reports/MERGE_GATE_V04.json', 'merge_gate'),
+              'provider': ('reports/MERGE_GATE_PROVIDER_V04.json', 'merge_gate'),
+              'store_patch': ('reports/HISTORICAL_STORE_PATCH_GATE_V051.json', 'multi_envelope'),
+              'typing': ('reports/HISTORICAL_TYPING_GATE_V052.json', 'mypy'),
+              'durability': ('reports/PIT_RESUME_DURABILITY_GATE_V054.json', 'resume_manifest'),
+              'fred': ('reports/FRED_VINTAGE_GATE_V055.json', 'fred_engineering_gate'),
+              'fred_dates': ('reports/FRED_VINTAGE_DATE_GATE_V056.json', 'vintage_date_validation'),
+              'governance': ('reports/DATA_GOVERNANCE_GATE_V056.json', 'engineering_governance'),
+              'quality': ('reports/HISTORICAL_QUALITY_GATE_V057.json', 'historical_quality_gate'),
+              'snapshot': ('reports/RESEARCH_SNAPSHOT_GATE_V058.json', 'snapshot_engineering_gate'),
+          }
+          loaded = {}
+          for name, (path, field) in reports.items():
+              payload = json.loads(Path(path).read_text())
+              loaded[name] = payload
+              if payload.get(field) != 'PASS':
+                  failures.append(f'{name}: {field}={payload.get(field)!r}')
+              if payload.get('production_release') != 'BLOCKED':
+                  failures.append(f'{name}: production_release must remain BLOCKED')
+
+          required_files = (
+              'src/xrp_regime_engine/historical_store.py',
+              'src/xrp_regime_engine/historical_backfill.py',
+              'src/xrp_regime_engine/historical_spot_adapters.py',
+              'src/xrp_regime_engine/fred_vintage_adapter.py',
+              'src/xrp_regime_engine/historical_quality.py',
+              'src/xrp_regime_engine/research_snapshot.py',
+              'scripts/backfill_xrp_spot_v05.py',
+              'scripts/backfill_fred_series_v05.py',
+              'scripts/audit_historical_candles_v05.py',
+              'scripts/build_research_snapshot_v05.py',
+              'config/historical_datasets_v05.json',
+              'config/fred_series_v05.json',
+              'config/research_snapshot_profiles_v05.json',
+              'config/source_licence_registry_v05.json',
+              'config/data_retention_v05.json',
+          )
+          for path in required_files:
+              if not Path(path).is_file():
+                  failures.append(f'missing required v0.5 path: {path}')
+
+          symbol_contracts = {
+              'src/xrp_regime_engine/historical_store.py': {
+                  'ContentAddressedRawStore', 'HistoricalRecord', 'JSONLPartitionStore',
+                  'DatasetManifest', 'ManifestStore', 'PointInTimeCatalog',
+                  'BackfillCheckpointStore', 'sanitize_source_url',
+              },
+              'src/xrp_regime_engine/historical_backfill.py': {
+                  'BackfillWindow', 'BackfillPage', 'HistoricalAdapter', 'BackfillRunner',
+              },
+              'src/xrp_regime_engine/historical_spot_adapters.py': {
+                  'HistoricalHTTPClient', 'CoinbaseCandleAdapter', 'BinanceKlineAdapter',
+              },
+              'src/xrp_regime_engine/fred_vintage_adapter.py': {
+                  'FREDSeriesSpec', 'FREDVintageAdapter',
+              },
+              'src/xrp_regime_engine/historical_quality.py': {
+                  'QualityStatus', 'QualityIssue', 'CandleQualityReport', 'analyze_candle_records',
+              },
+              'src/xrp_regime_engine/research_snapshot.py': {
+                  'SnapshotUnavailable', 'DatasetRequirement', 'ResearchSnapshotBuilder',
+                  'ResearchSnapshotStore',
+              },
+          }
+          for path, expected in symbol_contracts.items():
+              if not Path(path).is_file():
+                  continue
+              tree = ast.parse(Path(path).read_text(encoding='utf-8'), filename=path)
+              symbols = {
+                  node.name for node in tree.body
+                  if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+              }
+              missing = sorted(expected - symbols)
+              if missing:
+                  failures.append(f'{path}: missing symbols {missing}')
+
+          source = '\n'.join(
+              path.read_text(encoding='utf-8', errors='ignore').lower()
+              for path in Path('src').rglob('*.py')
+          )
+          forbidden = (
+              'place_order', 'execute_trade', 'withdraw_funds', 'send_funds',
+              'private_key', 'seed_phrase', 'wallet_sign', 'submit_transaction',
+          )
+          hits = [token for token in forbidden if token in source]
+          if hits:
+              failures.append(f'forbidden financial-execution primitives: {hits}')
+
+          retention = json.loads(Path('config/data_retention_v05.json').read_text())
+          if retention['hard_rules']['personal_financial_context_in_market_engine'] is not False:
+              failures.append('personal financial context boundary is not false')
+          profiles = json.loads(Path('config/research_snapshot_profiles_v05.json').read_text())
+          if profiles['hard_rules']['usd_usdt_silent_merge'] is not False:
+              failures.append('USD/USDT silent merge is not disabled')
+
+          if failures:
+              Path('/tmp/pit-release-blockers.txt').write_text('\n'.join(failures) + '\n')
+              raise SystemExit('; '.join(failures))
+          PY
+
+      - name: Install engineering and analytical research toolchain
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx build
+          python -m pip install -r requirements/research-v05.txt
+          python - <<'PY'
+          import duckdb, polars, pyarrow
+          print('duckdb', duckdb.__version__)
+          print('polars', polars.__version__)
+          print('pyarrow', pyarrow.__version__)
+          PY
+
+      - name: Execute full repository and targeted v0.5 gates
+        shell: bash
+        run: |
+          python -m compileall -q src tests scripts
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+          mypy \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            src/xrp_regime_engine/historical_quality.py \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/backfill_xrp_spot_v05.py \
+            scripts/backfill_fred_series_v05.py \
+            scripts/audit_historical_candles_v05.py \
+            scripts/build_research_snapshot_v05.py
+          python -m pytest -q \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            tests/test_historical_edge_cases_v05.py \
+            tests/test_pit_resume_durability_v054.py \
+            tests/test_fred_vintage_adapter_v05.py \
+            tests/test_fred_vintage_edge_cases_v05.py \
+            tests/test_historical_quality_v05.py \
+            tests/test_audit_historical_candles_cli_v05.py \
+            tests/test_research_snapshot_v05.py \
+            tests/test_build_research_snapshot_cli_v05.py \
+            --cov=xrp_regime_engine.historical_store \
+            --cov=xrp_regime_engine.historical_backfill \
+            --cov=xrp_regime_engine.historical_spot_adapters \
+            --cov=xrp_regime_engine.fred_vintage_adapter \
+            --cov=xrp_regime_engine.historical_quality \
+            --cov=xrp_regime_engine.research_snapshot \
+            --cov-report=term-missing \
+            --cov-report=json:reports/pit-release-targeted-coverage-v059.json \
+            --cov-fail-under=90
+          python -m pytest -q --cov=xrp_regime_engine --cov-report=term-missing --cov-report=json:reports/pit-release-full-coverage-v059.json --cov-fail-under=70
+          bandit -q -r src/xrp_regime_engine scripts
+          python -m build
+
+      - name: Execute CLI, Docker and API smoke gates
+        shell: bash
+        run: |
+          python scripts/backfill_xrp_spot_v05.py --help
+          python scripts/backfill_fred_series_v05.py --help
+          python scripts/audit_historical_candles_v05.py --help
+          python scripts/build_research_snapshot_v05.py --help
+          docker build -t xrp-regime-engine:v0.5.0-beta .
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from xrp_regime_engine.api import app
+          response = TestClient(app).get('/health')
+          assert response.status_code == 200, response.text
+          print(response.json())
+          PY
+
+      - name: Persist formal v0.5 release gate and state
+        shell: bash
+        run: |
+          rm -rf .pit-release
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          sample = Path('reports/HISTORICAL_SAMPLE_GATE_V05.json')
+          sample_status = 'NOT_RUN'
+          if sample.exists():
+              sample_status = json.loads(sample.read_text()).get('status', 'UNKNOWN')
+          fred_sample = Path('reports/fred-sample-v05.json')
+          evidence = {
+              'version': '0.5.0-beta.1',
+              'engineering_release_gate': 'PASS',
+              'verified_at': datetime.now(timezone.utc).isoformat(),
+              'mandatory_gates': [
+                  'canonical-alpha-and-provider-base', 'immutable-raw-store',
+                  'multi-envelope-provenance', 'PIT-catalog', 'durable-resume-manifest',
+                  'spot-historical-adapters', 'FRED-vintage-adapter', 'data-governance',
+                  'historical-quality-audit', 'research-snapshot', 'targeted-coverage-90',
+                  'full-pytest', 'full-coverage-70', 'mypy', 'ruff', 'bandit',
+                  'package-build', 'research-dependencies', 'docker', 'api-health',
+              ],
+              'bounded_spot_sample': sample_status,
+              'fred_sample_present': fred_sample.exists(),
+              'production_release': 'BLOCKED',
+              'external_production_blockers': [
+                  'complete historical provider backfills',
+                  'quantified missing intervals and revisions',
+                  'protected FRED_API_KEY and bounded vintage sample',
+                  'source licence approvals',
+                  'macro and market dataset manifests',
+                  'restore/replay drill',
+                  'walk-forward calibration without leakage',
+                  'immutable shadow operation for at least 30 days',
+                  'measured SLO and incident evidence',
+              ],
+          }
+          Path('reports/PIT_RELEASE_GATE_V059.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+
+          state_path = Path('STATE.md')
+          previous = state_path.read_text(encoding='utf-8') if state_path.exists() else '# STATE\n'
+          section = '''\n## v0.5 point-in-time research substrate\n\n- Engineering release gate: `PASS`\n- Raw/provenance, PIT catalog, durable backfill, FRED vintages, quality audit and research snapshots: implemented and tested\n- Bounded spot sample: `{sample}`\n- FRED protected sample: `{fred}`\n- Production release: `BLOCKED`\n- Remaining gates: complete manifests, licences, restore/replay, calibration, 30-day shadow and SLO evidence.\n'''.format(sample=sample_status, fred='PRESENT' if fred_sample.exists() else 'PENDING_SECRET')
+          if '## v0.5 point-in-time research substrate' not in previous:
+              state_path.write_text(previous.rstrip() + '\n' + section, encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): persist passing v0.5 PIT release gate' || true
+          git push origin HEAD:"$BRANCH"
+
+      - name: Open release-gate blocker
+        if: failure()
+        shell: bash
+        run: |
+          TITLE='[P0] v0.5 point-in-time release gate blocked'
+          DETAILS=$(cat /tmp/pit-release-blockers.txt 2>/dev/null || echo 'One or more executable v0.5 gates failed; inspect this workflow run and committed component reports.')
+          BODY=$(cat <<EOF
+          The v0.5 point-in-time release controller refused to pass `${BRANCH}`.
+
+          ${DETAILS}
+
+          Do not bypass immutable provenance, availability timing, coverage, typing, security, Docker or API gates.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,gate:blocked'; fi
