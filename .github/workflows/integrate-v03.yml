@@ -1,0 +1,244 @@
+name: integrate-v03
+
+on:
+  push:
+    branches: [feat/xrp-engine-foundation-v0.3]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: integrate-xrp-engine-v03
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout canonical feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/xrp-engine-foundation-v0.3
+          fetch-depth: 0
+
+      - name: Detect source readiness
+        id: ready
+        shell: bash
+        run: |
+          if [[ -f pyproject.toml && -d src/xrp_regime_engine && -d tests ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Foundation source is not present yet; waiting for bootstrap recovery."
+          fi
+
+      - name: Stop cleanly until source exists
+        if: steps.ready.outputs.ready != 'true'
+        run: echo "No integration performed."
+
+      - name: Detect completed reconciliation
+        if: steps.ready.outputs.ready == 'true'
+        id: reconciled
+        shell: bash
+        run: |
+          if [[ -f reports/REPOSITORY_RECONCILIATION_V03.json ]]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch staged engineering branches
+        if: steps.ready.outputs.ready == 'true' && steps.reconciled.outputs.complete != 'true'
+        run: git fetch origin --prune
+
+      - name: Overlay governance assets without parallel implementations
+        if: steps.ready.outputs.ready == 'true' && steps.reconciled.outputs.complete != 'true'
+        shell: bash
+        run: |
+          for path in \
+            CONTRIBUTING.md \
+            .github/CODEOWNERS \
+            .github/PULL_REQUEST_TEMPLATE.md \
+            docs/governance \
+            scripts/verify_repository_contract_v03.py \
+            tests/test_repository_contract_v03.py; do
+            git cat-file -e "origin/feat/repo-governance-and-quality-v0.3:$path" 2>/dev/null \
+              && git checkout origin/feat/repo-governance-and-quality-v0.3 -- "$path" \
+              || true
+          done
+
+      - name: Overlay provider assurance assets
+        if: steps.ready.outputs.ready == 'true' && steps.reconciled.outputs.complete != 'true'
+        shell: bash
+        run: |
+          for path in \
+            src/xrp_regime_engine/provider_assurance_v03.py \
+            config/source_registry_v03.json; do
+            git cat-file -e "origin/feat/data-provider-assurance-v0.3:$path" 2>/dev/null \
+              && git checkout origin/feat/data-provider-assurance-v0.3 -- "$path" \
+              || true
+          done
+
+      - name: Create canonical repository evidence and governance contract
+        if: steps.ready.outputs.ready == 'true' && steps.reconciled.outputs.complete != 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path.cwd()
+          reports = root / "reports"
+          docs = root / "docs/repo-audit"
+          reports.mkdir(parents=True, exist_ok=True)
+          docs.mkdir(parents=True, exist_ok=True)
+
+          files = sorted(
+              p for p in root.rglob("*")
+              if p.is_file() and ".git" not in p.parts
+          )
+          source = [p for p in files if "src" in p.parts]
+          tests = [p for p in files if "tests" in p.parts]
+          workflows = [p for p in files if p.parts[:2] == (".github", "workflows")]
+
+          tree = hashlib.sha256()
+          for path in files:
+              rel = path.relative_to(root).as_posix()
+              tree.update(rel.encode("utf-8"))
+              tree.update(b"\0")
+              tree.update(hashlib.sha256(path.read_bytes()).digest())
+
+          evidence = {
+              "repository": "rotprods/XRP-inteliggence-x-",
+              "canonical_branch": "main",
+              "integration_branch": "feat/xrp-engine-foundation-v0.3",
+              "mode": "read-only-market-intelligence",
+              "file_count": len(files),
+              "source_file_count": len(source),
+              "test_file_count": len(tests),
+              "workflow_file_count": len(workflows),
+              "tree_sha256": tree.hexdigest(),
+              "staged_sources": [
+                  "alpha recovery package",
+                  "feat/repo-governance-and-quality-v0.3",
+                  "feat/data-provider-assurance-v0.3",
+              ],
+              "forbidden_capabilities": [
+                  "trading",
+                  "custody",
+                  "wallet signing",
+                  "private-key management",
+                  "order execution",
+              ],
+              "production_release": "BLOCKED",
+              "production_blockers": [
+                  "sustained live-provider validation",
+                  "point-in-time historical backfill",
+                  "walk-forward calibration without leakage",
+                  "minimum 30-day immutable shadow run",
+                  "SLO and incident-drill evidence",
+              ],
+          }
+          (reports / "REPOSITORY_RECONCILIATION_V03.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          (docs / "REPO_AUDIT.md").write_text(
+              """# Repository audit — v0.3 alpha\n\n"
+              "## Authoritative surfaces\n\n"
+              "- GitHub: executable source, tests, CI, branches, pull requests and releases.\n"
+              "- Drive: operational control plane, research, large datasets and recovery artifacts.\n"
+              "- The repository contains one canonical Python package: `xrp_regime_engine`.\n\n"
+              "## Security boundary\n\n"
+              "This repository is read-only market intelligence. Trading, custody, wallet signing, "
+              "private-key management and order execution are explicitly out of scope.\n\n"
+              "## Release status\n\n"
+              "The imported system is an engineering alpha. Production remains blocked until the "
+              "provider, historical calibration, shadow-operation and SLO gates are evidenced.\n"
+              """,
+              encoding="utf-8",
+          )
+
+          (docs / "CAPABILITY_INVENTORY.json").write_text(
+              json.dumps(
+                  {
+                      "data": ["spot", "derivatives", "macro", "equities", "commodities", "XRPL"],
+                      "intelligence": ["features", "regime scoring", "confidence degradation", "attribution"],
+                      "interfaces": ["CLI", "FastAPI", "JSON contracts"],
+                      "operations": ["health", "audit", "scheduler", "alerts", "Docker", "CI"],
+                  },
+                  indent=2,
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+
+          (docs / "MIGRATION_MAP.md").write_text(
+              """# Migration map\n\n"
+              "| Source | Decision | Canonical target |\n"
+              "|---|---|---|\n"
+              "| Alpha recovery package | merge and attest | repository root |\n"
+              "| Governance branch | overlay selected governance-only paths | repository root |\n"
+              "| Provider assurance branch | overlay selected provider-only paths | canonical package/config |\n"
+              "| Bootstrap chunks/workflow | delete after successful recovery | none |\n"
+              "| Large datasets | retain outside Git | Drive/object storage |\n"
+              "| Trading functionality | reject | out of scope |\n"
+              """,
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Install project and quality dependencies
+        if: steps.ready.outputs.ready == 'true' && steps.reconciled.outputs.complete != 'true'
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+            python -m pip install pytest pytest-cov ruff mypy bandit
+          fi
+
+      - name: Normalize and execute integrated quality gate
+        if: steps.ready.outputs.ready == 'true' && steps.reconciled.outputs.complete != 'true'
+        shell: bash
+        run: |
+          ruff check --fix src tests scripts || true
+          ruff format src tests scripts
+          python -m compileall -q src tests scripts
+          python -m pytest -q
+          bandit -q -r src/xrp_regime_engine
+          if [[ -f scripts/verify_repository_contract_v03.py ]]; then
+            python scripts/verify_repository_contract_v03.py
+          fi
+
+      - name: Commit reconciled canonical branch
+        if: steps.ready.outputs.ready == 'true' && steps.reconciled.outputs.complete != 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(repo): reconcile governance, providers and evidence gates"
+          git push origin HEAD:feat/xrp-engine-foundation-v0.3
+
+      - name: Update pull request evidence
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr edit 1 \
+            --repo rotprods/XRP-inteliggence-x- \
+            --add-label "area:foundation" 2>/dev/null || true
+          gh pr comment 1 \
+            --repo rotprods/XRP-inteliggence-x- \
+            --body "Automated v0.3 reconciliation executed. See reports/BOOTSTRAP_IMPORT_EVIDENCE.json, reports/REPOSITORY_RECONCILIATION_V03.json and the latest Actions run for evidence." \
+            2>/dev/null || true
