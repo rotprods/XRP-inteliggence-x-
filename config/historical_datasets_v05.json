@@ -1,0 +1,92 @@
+{
+  "version": "0.5.0",
+  "storage": {
+    "raw": "content-addressed immutable bytes",
+    "normalized": "deterministic JSONL partitions",
+    "catalog": "SQLite point-in-time index",
+    "manifests": "SHA-256 immutable manifests",
+    "recommended_scale_target": "Parquet + DuckDB/Polars after schema validation"
+  },
+  "datasets": [
+    {
+      "id": "xrp_usd_spot_3600s",
+      "provider": "coinbase",
+      "base_asset": "XRP",
+      "quote_asset": "USD",
+      "interval_seconds": 3600,
+      "schema_version": "candle.v1",
+      "adapter": "CoinbaseCandleAdapter",
+      "availability_policy": "candle_close",
+      "revision_policy": "provider_replay_creates_new revision only when content changes"
+    },
+    {
+      "id": "xrp_usdt_spot_3600s",
+      "provider": "binance",
+      "base_asset": "XRP",
+      "quote_asset": "USDT",
+      "interval_seconds": 3600,
+      "schema_version": "candle.v1",
+      "adapter": "BinanceKlineAdapter",
+      "availability_policy": "close_time_plus_one_millisecond",
+      "quality_flags": ["STABLECOIN_QUOTE", "REGIONAL_AVAILABILITY_REQUIRED"]
+    }
+  ],
+  "research_windows": [
+    {
+      "id": "xrp_2017_parabolic_repricing",
+      "start": "2017-01-01T00:00:00Z",
+      "end": "2018-01-15T00:00:00Z",
+      "label": "PARABOLIC_REPRICING"
+    },
+    {
+      "id": "xrp_2018_capitulation",
+      "start": "2018-01-15T00:00:00Z",
+      "end": "2019-01-01T00:00:00Z",
+      "label": "CAPITULATION"
+    },
+    {
+      "id": "xrp_2020_sec_shock",
+      "start": "2020-11-01T00:00:00Z",
+      "end": "2021-02-01T00:00:00Z",
+      "label": "REGULATORY_SHOCK"
+    },
+    {
+      "id": "crypto_2021_bull_cycle",
+      "start": "2020-08-01T00:00:00Z",
+      "end": "2021-12-01T00:00:00Z",
+      "label": "CRYPTO_BULL"
+    },
+    {
+      "id": "crypto_2022_liquidity_credit_shock",
+      "start": "2022-01-01T00:00:00Z",
+      "end": "2023-01-01T00:00:00Z",
+      "label": "LIQUIDITY_CREDIT_SHOCK"
+    },
+    {
+      "id": "xrp_2023_legal_repricing",
+      "start": "2023-06-01T00:00:00Z",
+      "end": "2023-09-01T00:00:00Z",
+      "label": "LEGAL_REPRICING"
+    },
+    {
+      "id": "xrp_2024_2025_institutional",
+      "start": "2024-01-01T00:00:00Z",
+      "end": "2026-01-01T00:00:00Z",
+      "label": "INSTITUTIONAL_EXPANSION"
+    },
+    {
+      "id": "xrp_2026_correction_reversal",
+      "start": "2026-01-01T00:00:00Z",
+      "end": "2027-01-01T00:00:00Z",
+      "label": "CORRECTION_REVERSAL_ATTEMPT"
+    }
+  ],
+  "hard_rules": {
+    "future_data": false,
+    "available_at_required": true,
+    "raw_payload_hash_required": true,
+    "silent_overwrite": false,
+    "cross_quote_mixing": false,
+    "macro_vintage_required_when_available": true
+  }
+}
