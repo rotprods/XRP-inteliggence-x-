@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible defect in the read-only intelligence engine
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, wallet seeds, private keys, personal financial data or exchange credentials.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.3.0-alpha / commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - provider ingestion
+        - data contracts
+        - feature engineering
+        - regime scoring
+        - confidence gate
+        - API / CLI
+        - dashboard / reports
+        - CI / packaging
+        - security / SRE
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal deterministic steps, fixture or command.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and evidence
+      description: Redact credentials and personal data.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed secrets, private keys and personal financial information.
+          required: true
