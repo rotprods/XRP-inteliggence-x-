@@ -1,0 +1,109 @@
+name: fred-vintage-date-patch-v056
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .fred-date-patch/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-fred-vintage-date-patch-v056
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate discovered vintage dates at ingestion boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/xrp_regime_engine/fred_vintage_adapter.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        dates = accumulated + raw_dates\n        deduplicated = sorted(set(dates))\n        if len(deduplicated) > self.max_vintage_dates:\n            raise ProviderProtocolError("FRED vintage-date discovery exceeded its configured maximum")\n'''
+          new = '''        dates = accumulated + raw_dates\n        deduplicated = sorted(set(dates))\n        for raw_date in deduplicated:\n            parsed_date = _date_at_utc(raw_date).date()\n            if not self.vintage_start <= parsed_date <= self.vintage_end:\n                raise ProviderProtocolError("FRED vintage date is outside the configured window")\n        if len(deduplicated) > self.max_vintage_dates:\n            raise ProviderProtocolError("FRED vintage-date discovery exceeded its configured maximum")\n'''
+          if old not in text:
+              raise SystemExit('FRED discovery date-validation anchor not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          cat >> tests/test_fred_vintage_edge_cases_v05.py <<'PY'
+
+
+def test_discovery_rejects_invalid_or_out_of_window_vintage_dates() -> None:
+    invalid = make_adapter(
+        lambda request: httpx.Response(
+            200,
+            json={"count": 1, "offset": 0, "limit": 1000, "vintage_dates": ["not-a-date"]},
+            request=request,
+        )
+    )
+    with pytest.raises(ProviderProtocolError, match="invalid FRED date"):
+        invalid.fetch_page(window(), invalid.initial_cursor(window()))
+
+    outside = make_adapter(
+        lambda request: httpx.Response(
+            200,
+            json={"count": 1, "offset": 0, "limit": 1000, "vintage_dates": ["2026-01-15"]},
+            request=request,
+        )
+    )
+    with pytest.raises(ProviderProtocolError, match="outside the configured window"):
+        outside.fetch_page(window(), outside.initial_cursor(window()))
+          PY
+          rm -rf .fred-date-patch
+
+      - name: Install, normalize and validate
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx
+          ruff check --fix src/xrp_regime_engine/fred_vintage_adapter.py tests/test_fred_vintage_adapter_v05.py tests/test_fred_vintage_edge_cases_v05.py || true
+          ruff format src/xrp_regime_engine/fred_vintage_adapter.py tests/test_fred_vintage_adapter_v05.py tests/test_fred_vintage_edge_cases_v05.py
+          python -m compileall -q src tests scripts
+          ruff check src/xrp_regime_engine/fred_vintage_adapter.py tests/test_fred_vintage_adapter_v05.py tests/test_fred_vintage_edge_cases_v05.py
+          ruff format --check src/xrp_regime_engine/fred_vintage_adapter.py tests/test_fred_vintage_adapter_v05.py tests/test_fred_vintage_edge_cases_v05.py
+          mypy src/xrp_regime_engine/fred_vintage_adapter.py
+          python -m pytest -q tests/test_fred_vintage_adapter_v05.py tests/test_fred_vintage_edge_cases_v05.py \
+            --cov=xrp_regime_engine.fred_vintage_adapter \
+            --cov-report=term-missing \
+            --cov-report=json:reports/fred-date-coverage-v056.json \
+            --cov-fail-under=90
+          bandit -q -r src/xrp_regime_engine/fred_vintage_adapter.py
+
+      - name: Commit passing date-validation patch
+        shell: bash
+        run: |
+          printf '{"version":"0.5.6","vintage_date_validation":"PASS","coverage_threshold":90,"production_release":"BLOCKED"}\n' > reports/FRED_VINTAGE_DATE_GATE_V056.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(macro): validate FRED vintage dates before checkpointing' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open vintage-date blocker
+        if: failure()
+        shell: bash
+        run: |
+          gh issue create --title '[P0] Resolve FRED vintage-date validation gate' \
+            --body 'FRED vintage date format/window validation, typing, coverage or security failed. Do not checkpoint unvalidated publication dates.' \
+            --label 'priority:p0,area:data,type:research,gate:blocked' || true
