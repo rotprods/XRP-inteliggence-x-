@@ -1,0 +1,179 @@
+name: stack-integrate-v03
+
+on:
+  push:
+    branches: [feat/xrp-engine-foundation-v0.3]
+    paths:
+      - .orchestration/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xrp-stack-integrate-v03
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/xrp-engine-foundation-v0.3
+          fetch-depth: 0
+
+      - name: Wait for canonical foundation to be published
+        shell: bash
+        run: |
+          for attempt in $(seq 1 40); do
+            git fetch origin feat/xrp-engine-foundation-v0.3 --prune
+            if git cat-file -e origin/feat/xrp-engine-foundation-v0.3:pyproject.toml 2>/dev/null; then
+              git reset --hard origin/feat/xrp-engine-foundation-v0.3
+              exit 0
+            fi
+            echo "foundation not published yet; attempt ${attempt}/40"
+            sleep 15
+          done
+          echo "canonical foundation did not appear within timeout" >&2
+          exit 1
+
+      - name: Create clean integration branch and reconcile stacked capabilities
+        shell: bash
+        run: |
+          git fetch origin --prune
+          git checkout -B integration/xrp-engine-v0.3.0-alpha origin/feat/xrp-engine-foundation-v0.3
+
+          import_path() {
+            local ref="$1"
+            local path="$2"
+            if git cat-file -e "${ref}:${path}" 2>/dev/null; then
+              git checkout "${ref}" -- "${path}"
+              echo "imported ${path} from ${ref}"
+            else
+              echo "not present: ${path} in ${ref}"
+            fi
+          }
+
+          GOV=origin/feat/repo-governance-and-quality-v0.3
+          PROVIDERS=origin/feat/data-provider-assurance-v0.3
+
+          for path in \
+            CONTRIBUTING.md \
+            .github/CODEOWNERS \
+            .github/PULL_REQUEST_TEMPLATE.md \
+            .github/workflows/quality-gate-v03.yml \
+            docs/governance/ADR-0001-CANONICAL-REPOSITORY.md \
+            docs/governance/RISK_REGISTER.md \
+            scripts/verify_repository_contract_v03.py \
+            tests/test_repository_contract_v03.py; do
+            import_path "$GOV" "$path"
+          done
+
+          for path in \
+            src/xrp_regime_engine/provider_assurance_v03.py \
+            config/source_registry_v03.json \
+            tests/test_provider_assurance_v03.py \
+            docs/data/PROVIDER_ASSURANCE_V03.md; do
+            import_path "$PROVIDERS" "$path"
+          done
+
+          rm -rf .bootstrap .quality .orchestration
+          rm -f .github/workflows/bootstrap-import.yml \
+                .github/workflows/bootstrap-recover-v2.yml
+
+      - name: Ensure production-grade repository contracts
+        shell: bash
+        run: |
+          mkdir -p docs/governance reports
+          test -f README.md
+          test -f pyproject.toml
+          test -d src/xrp_regime_engine
+          test -d tests
+
+          if [ ! -f CONTRIBUTING.md ]; then
+            cat > CONTRIBUTING.md <<'EOF'
+          # Contributing
+
+          All material changes require a scoped branch, tests, provenance evidence and a pull request. The system is read-only market intelligence; trading, custody, signing, private-key management, withdrawals and order execution are out of scope.
+          EOF
+          fi
+
+          if [ ! -f .github/CODEOWNERS ]; then
+            mkdir -p .github
+            printf '* @rotprods\n' > .github/CODEOWNERS
+          fi
+
+          cat > docs/governance/REPOSITORY_CANONICALITY.md <<'EOF'
+          # Repository canonicality
+
+          `rotprods/XRP-inteliggence-x-` is the canonical engineering repository for the XRP Cross-Asset Regime Intelligence Engine. Google Drive is the operational control plane and recovery data room. No parallel `engine_v2`, `engine_final` or untracked implementation may supersede this tree.
+          EOF
+
+      - name: Install dependencies and normalize
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+            python -m pip install pytest pytest-cov ruff mypy bandit pip-audit
+          fi
+          ruff check --fix src tests scripts || true
+          ruff format src tests scripts
+
+      - name: Run integrated quality gates
+        shell: bash
+        run: |
+          set +e
+          python -m compileall -q src tests scripts; COMPILE=$?
+          ruff check src tests scripts; RUFF=$?
+          ruff format --check src tests scripts; FORMAT=$?
+          python -m pytest --cov=xrp_regime_engine --cov-report=term-missing -q; PYTEST=$?
+          mypy src/xrp_regime_engine; MYPY=$?
+          bandit -q -r src/xrp_regime_engine; BANDIT=$?
+          pip-audit; AUDIT=$?
+          python - <<PY
+          import json
+          from pathlib import Path
+          gates = {
+              'compileall': $COMPILE,
+              'ruff': $RUFF,
+              'format': $FORMAT,
+              'pytest': $PYTEST,
+              'mypy': $MYPY,
+              'bandit': $BANDIT,
+              'pip_audit': $AUDIT,
+          }
+          required = ['compileall', 'ruff', 'format', 'pytest', 'bandit']
+          payload = {
+              'branch': 'integration/xrp-engine-v0.3.0-alpha',
+              'gates': gates,
+              'required_status': 'PASS' if all(gates[k] == 0 for k in required) else 'FAIL',
+              'advisory_status': 'PASS' if gates['mypy'] == 0 and gates['pip_audit'] == 0 else 'WARN',
+              'production_release': 'BLOCKED',
+              'release_blockers': [
+                  'sustained live-provider validation',
+                  'point-in-time historical backfill',
+                  'walk-forward calibration without leakage',
+                  'minimum 30-day immutable shadow run',
+                  'SLO and incident-drill evidence',
+              ],
+          }
+          Path('reports/STACK_INTEGRATION_EVIDENCE.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+          if [ "$COMPILE" -ne 0 ] || [ "$RUFF" -ne 0 ] || [ "$FORMAT" -ne 0 ] || [ "$PYTEST" -ne 0 ] || [ "$BANDIT" -ne 0 ]; then
+            echo "required integrated gate failed" >&2
+            exit 1
+          fi
+
+      - name: Publish integration branch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(integration): reconcile foundation, governance and provider assurance' || true
+          git push --force-with-lease origin HEAD:integration/xrp-engine-v0.3.0-alpha
