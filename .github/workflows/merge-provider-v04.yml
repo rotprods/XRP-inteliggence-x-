@@ -1,0 +1,244 @@
+name: merge-provider-v04
+
+on:
+  push:
+    branches: [feat/v0.4-live-provider-plane]
+    paths:
+      - .merge-provider/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: xrp-merge-provider-v04
+  cancel-in-progress: false
+
+jobs:
+  verify-and-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: feat/v0.4-live-provider-plane
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.4-live-provider-plane
+          fetch-depth: 0
+
+      - name: Wait for provider evidence and pull request
+        shell: bash
+        run: |
+          for attempt in $(seq 1 100); do
+            git fetch origin "$BRANCH" --prune
+            git reset --hard "origin/$BRANCH"
+            PR=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+            if [ -n "$PR" ] \
+              && [ -f reports/PROVIDER_PLANE_GATE_V04.json ] \
+              && [ -f reports/PROVIDER_PLANE_PATCH_GATE_V041.json ]; then
+              echo "$PR" > /tmp/provider_pr
+              exit 0
+            fi
+            echo "waiting for provider evidence ${attempt}/100"
+            sleep 15
+          done
+          echo 'provider evidence or PR missing' > /tmp/provider_blockers.txt
+          exit 1
+
+      - name: Validate base alpha and provider gate contracts
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast, json
+          from pathlib import Path
+
+          failures = []
+          for path in (
+              'reports/MERGE_GATE_V04.json',
+              'src/xrp_regime_engine/live_provider_plane.py',
+              'tests/test_live_provider_plane_v04.py',
+              'tests/test_provider_consensus_v04.py',
+              'config/provider_registry_v04.json',
+              'scripts/probe_public_providers_v04.py',
+          ):
+              if not Path(path).exists():
+                  failures.append(f'missing required path: {path}')
+
+          if Path('reports/MERGE_GATE_V04.json').exists():
+              alpha = json.loads(Path('reports/MERGE_GATE_V04.json').read_text())
+              if alpha.get('merge_gate') != 'PASS':
+                  failures.append('base engineering alpha has no passing merge gate')
+              if alpha.get('production_release') != 'BLOCKED':
+                  failures.append('base production boundary is not BLOCKED')
+
+          gate = json.loads(Path('reports/PROVIDER_PLANE_GATE_V04.json').read_text())
+          patch = json.loads(Path('reports/PROVIDER_PLANE_PATCH_GATE_V041.json').read_text())
+          if gate.get('engineering_gate') != 'PASS' or not gate.get('mergeable_code'):
+              failures.append(f"provider engineering gate: {gate.get('engineering_gate')}")
+          if patch.get('contract') != 'PASS' or int(patch.get('coverage_threshold', 0)) < 90:
+              failures.append('provider v0.4.1 contract/coverage patch did not pass')
+          if gate.get('production_release') != 'BLOCKED':
+              failures.append('provider gate must keep production BLOCKED')
+
+          tree = ast.parse(Path('src/xrp_regime_engine/live_provider_plane.py').read_text())
+          symbols = {
+              node.name for node in tree.body
+              if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+          }
+          required = {
+              'CircuitBreaker', 'ReadOnlyJSONClient', 'ProviderQuote', 'ProviderProbe',
+              'LiveProviderPlane', 'CoinbaseXRPUSDAdapter', 'KrakenXRPUSDAdapter',
+              'KuCoinXRPUSDTAdapter', 'BinanceXRPUSDTAdapter', 'validate_public_https_url',
+          }
+          missing = sorted(required - symbols)
+          if missing:
+              failures.append(f'missing provider-plane symbols: {missing}')
+
+          registry = json.loads(Path('config/provider_registry_v04.json').read_text())
+          if registry.get('mode') != 'read-only':
+              failures.append('provider registry is not read-only')
+          if any(item.get('method') != 'GET' for item in registry.get('providers', [])):
+              failures.append('provider registry contains a non-GET method')
+          if registry.get('consensus_policy', {}).get('cross_quote_mixing') is not False:
+              failures.append('cross-quote mixing is not explicitly disabled')
+
+          if failures:
+              Path('/tmp/provider_blockers.txt').write_text('\n'.join(failures) + '\n')
+              raise SystemExit('; '.join(failures))
+          PY
+
+      - name: Install exact toolchain
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx build
+
+      - name: Execute provider and full-repository gates
+        shell: bash
+        run: |
+          python -m compileall -q src tests scripts
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+          mypy src/xrp_regime_engine/live_provider_plane.py scripts/probe_public_providers_v04.py
+          python -m pytest -q tests/test_live_provider_plane_v04.py tests/test_provider_consensus_v04.py \
+            --cov=xrp_regime_engine.live_provider_plane \
+            --cov=xrp_regime_engine.provider_consensus \
+            --cov-report=term-missing \
+            --cov-report=json:reports/provider-final-coverage-v04.json \
+            --cov-fail-under=90
+          python -m pytest -q
+          bandit -q -r src/xrp_regime_engine
+          python -m build
+
+      - name: Execute Docker, API and public-probe smoke gates
+        id: live
+        shell: bash
+        run: |
+          docker build -t xrp-regime-engine:v0.4-provider-plane .
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from xrp_regime_engine.api import app
+          response = TestClient(app).get('/health')
+          assert response.status_code == 200, response.text
+          print(response.json())
+          PY
+          set +e
+          python scripts/probe_public_providers_v04.py --output reports/provider-merge-live-probe-v04.json --require-consensus
+          LIVE=$?
+          echo "status=$LIVE" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist provider merge evidence and state
+        shell: bash
+        env:
+          LIVE_STATUS: ${{ steps.live.outputs.status }}
+        run: |
+          rm -rf .merge-provider
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          live = int(os.environ.get('LIVE_STATUS', '1'))
+          evidence = {
+              'version': '0.4.0-provider-plane',
+              'merge_gate': 'PASS',
+              'verified_at': datetime.now(timezone.utc).isoformat(),
+              'mandatory_gates': [
+                  'base-alpha', 'provider-contract', 'coverage-90', 'mypy',
+                  'full-pytest', 'bandit', 'package-build', 'docker', 'api-health',
+              ],
+              'live_public_probe': 'PASS' if live == 0 else 'DEGRADED',
+              'production_release': 'BLOCKED',
+              'remaining_data_gates': [
+                  'sustained regional provider evidence',
+                  'provider substitution drill',
+                  'historical persistence and replay',
+                  'measured freshness, latency and availability SLOs',
+              ],
+          }
+          Path('reports/MERGE_GATE_PROVIDER_V04.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+
+          state_path = Path('STATE.md')
+          previous = state_path.read_text(encoding='utf-8') if state_path.exists() else '# STATE\n'
+          section = '''\n## v0.4 live provider plane\n\n- Engineering merge gate: `PASS`\n- Public probe at merge: `{live}`\n- Production release: `BLOCKED`\n- USD and USDT consensus groups remain separate.\n- Remaining gates: sustained regional evidence, provider substitution, persistence and SLO measurement.\n'''.format(live=evidence['live_public_probe'])
+          if '## v0.4 live provider plane' not in previous:
+              state_path.write_text(previous.rstrip() + '\n' + section, encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(data): persist passing v0.4 provider merge evidence' || true
+          git push origin HEAD:feat/v0.4-live-provider-plane
+
+      - name: Mark ready and merge provider plane
+        shell: bash
+        run: |
+          PR=$(cat /tmp/provider_pr)
+          gh pr ready "$PR" || true
+          gh pr comment "$PR" --body 'Provider v0.4 merge controller passed contract, 90% targeted coverage, typing, full tests, Bandit, package build, Docker and API health. Public reachability remains separately recorded and does not unlock production.'
+          gh pr merge "$PR" --squash --delete-branch \
+            --subject 'feat(data): live read-only XRP provider plane v0.4' \
+            --body 'Adds SSRF-safe GET-only public providers, bounded retries, circuit isolation, payload provenance and separate USD/USDT consensus groups. Production remains blocked pending sustained provider and SLO evidence.'
+
+      - name: Maintain external evidence backlog
+        shell: bash
+        run: |
+          TITLE='[P0] Accumulate sustained v0.4 provider and substitution evidence'
+          BODY=$(cat <<'EOF'
+          The v0.4 provider plane is merged as engineering infrastructure, not production evidence.
+
+          Required closure evidence:
+
+          - at least seven continuous days of provider-health artifacts;
+          - regional availability matrix;
+          - rate-limit and maintenance characterization;
+          - substitute provider contract for every consensus group;
+          - provider substitution drill;
+          - persisted raw payload hashes and replay manifests;
+          - freshness, latency and availability SLO report.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,gate:needs-evidence'; fi
+
+      - name: Open fail-closed provider merge blocker
+        if: failure()
+        shell: bash
+        run: |
+          TITLE='[P0] v0.4 provider-plane merge gate blocked'
+          DETAILS=$(cat /tmp/provider_blockers.txt 2>/dev/null || echo 'One or more executable provider gates failed; inspect this workflow run and branch reports.')
+          BODY=$(cat <<EOF
+          The provider-plane merge controller refused to merge `${BRANCH}`.
+
+          ${DETAILS}
+
+          Do not bypass contract, independent-source, coverage, typing, security, Docker or API gates.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,gate:blocked'; fi
