@@ -1,0 +1,96 @@
+name: sync-pit-base-v05
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .pit-sync/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-sync-pit-base-v05
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: feat/v0.5-point-in-time-backfill
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+
+      - name: Merge canonical main without silent conflict resolution
+        id: merge
+        shell: bash
+        run: |
+          set +e
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main --prune
+          git merge --no-ff --no-edit origin/main
+          STATUS=$?
+          if [ "$STATUS" -ne 0 ]; then
+            git diff --name-only --diff-filter=U > /tmp/pit-sync-conflicts.txt
+            git merge --abort || true
+            echo "status=CONFLICT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          rm -rf .pit-sync
+          git add -A
+          git commit -m 'chore(research): remove PIT sync trigger after canonical-base update' || true
+          git push origin HEAD:"$BRANCH"
+          echo "status=PASS" >> "$GITHUB_OUTPUT"
+
+      - name: Validate required canonical base capabilities
+        if: steps.merge.outputs.status == 'PASS'
+        shell: bash
+        run: |
+          test -f reports/MERGE_GATE_V04.json
+          test -f reports/MERGE_GATE_PROVIDER_V04.json
+          test -f src/xrp_regime_engine/live_provider_plane.py
+          test -f src/xrp_regime_engine/provider_consensus.py
+          test -f src/xrp_regime_engine/historical_store.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          alpha = json.loads(Path('reports/MERGE_GATE_V04.json').read_text())
+          provider = json.loads(Path('reports/MERGE_GATE_PROVIDER_V04.json').read_text())
+          assert alpha['merge_gate'] == 'PASS'
+          assert provider['merge_gate'] == 'PASS'
+          assert alpha['production_release'] == 'BLOCKED'
+          assert provider['production_release'] == 'BLOCKED'
+          PY
+
+      - name: Open canonical-base conflict issue
+        if: steps.merge.outputs.status == 'CONFLICT'
+        shell: bash
+        run: |
+          TITLE='[P0] Reconcile v0.5 PIT branch with canonical main'
+          FILES=$(cat /tmp/pit-sync-conflicts.txt 2>/dev/null || echo 'unknown files')
+          BODY=$(cat <<EOF
+          The fail-closed PIT base sync found merge conflicts and aborted without modifying the branch.
+
+          Conflicting paths:
+
+          \\`\\`\\`
+          ${FILES}
+          \\`\\`\\`
+
+          Resolve each conflict deliberately on `feat/v0.5-point-in-time-backfill`, preserve the alpha/provider safety boundaries and rerun the sync workflow.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,gate:blocked'; fi
+
+      - name: Enforce successful canonical-base sync
+        if: steps.merge.outputs.status != 'PASS'
+        run: exit 1
