@@ -1,0 +1,20 @@
+{
+  "engineering_governance": "PASS",
+  "failures": [],
+  "production_release": "BLOCKED",
+  "production_source_approval": "BLOCKED",
+  "source_count": 9,
+  "unresolved_source_count": 9,
+  "version": "0.5.6",
+  "warnings": [
+    "coinbase_exchange_public_market_data: production use unresolved",
+    "kraken_public_market_data: production use unresolved",
+    "kucoin_public_market_data: production use unresolved",
+    "binance_public_market_data: production use unresolved",
+    "xrpl_public_json_rpc: production use unresolved",
+    "fred_api: production use unresolved",
+    "ripple_official_announcements: production use unresolved",
+    "sec_public_materials: production use unresolved",
+    "swift_public_materials: production use unresolved"
+  ]
+}
