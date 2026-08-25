@@ -1,0 +1,143 @@
+{
+  "version": "0.5.0",
+  "provider": "FRED/ALFRED",
+  "api_host": "api.stlouisfed.org",
+  "authentication": "read-only FRED_API_KEY",
+  "point_in_time": {
+    "vintage_dates_required": true,
+    "available_at": "vintage publication date",
+    "observed_at": "series observation date",
+    "output_type": 1,
+    "future_data": false
+  },
+  "series": [
+    {
+      "series_id": "DGS2",
+      "dataset": "us_treasury_2y_daily",
+      "frequency": "daily",
+      "category": "rates",
+      "units": "percent",
+      "weight": 1.0
+    },
+    {
+      "series_id": "DGS10",
+      "dataset": "us_treasury_10y_daily",
+      "frequency": "daily",
+      "category": "rates",
+      "units": "percent",
+      "weight": 1.0
+    },
+    {
+      "series_id": "DGS30",
+      "dataset": "us_treasury_30y_daily",
+      "frequency": "daily",
+      "category": "rates",
+      "units": "percent",
+      "weight": 0.6
+    },
+    {
+      "series_id": "DFII10",
+      "dataset": "us_real_yield_10y_daily",
+      "frequency": "daily",
+      "category": "real_yields",
+      "units": "percent",
+      "weight": 1.0
+    },
+    {
+      "series_id": "DTWEXBGS",
+      "dataset": "broad_us_dollar_index_daily",
+      "frequency": "daily",
+      "category": "dollar",
+      "units": "index",
+      "weight": 1.0
+    },
+    {
+      "series_id": "NFCI",
+      "dataset": "chicago_financial_conditions_weekly",
+      "frequency": "weekly",
+      "category": "financial_conditions",
+      "units": "index",
+      "weight": 1.0
+    },
+    {
+      "series_id": "M2SL",
+      "dataset": "us_m2_monthly",
+      "frequency": "monthly",
+      "category": "liquidity",
+      "units": "billions_usd",
+      "weight": 0.8
+    },
+    {
+      "series_id": "SP500",
+      "dataset": "sp500_daily",
+      "frequency": "daily",
+      "category": "equities",
+      "units": "index",
+      "weight": 0.8
+    },
+    {
+      "series_id": "NASDAQ100",
+      "dataset": "nasdaq100_daily",
+      "frequency": "daily",
+      "category": "equities",
+      "units": "index",
+      "weight": 1.0
+    },
+    {
+      "series_id": "VIXCLS",
+      "dataset": "vix_daily",
+      "frequency": "daily",
+      "category": "volatility",
+      "units": "index",
+      "weight": 0.8
+    },
+    {
+      "series_id": "DCOILWTICO",
+      "dataset": "wti_crude_daily",
+      "frequency": "daily",
+      "category": "energy",
+      "units": "usd_per_barrel",
+      "weight": 0.5
+    },
+    {
+      "series_id": "DCOILBRENTEU",
+      "dataset": "brent_crude_daily",
+      "frequency": "daily",
+      "category": "energy",
+      "units": "usd_per_barrel",
+      "weight": 0.4
+    },
+    {
+      "series_id": "GASREGW",
+      "dataset": "us_regular_gasoline_weekly",
+      "frequency": "weekly",
+      "category": "energy_inflation",
+      "units": "usd_per_gallon",
+      "weight": 0.4
+    },
+    {
+      "series_id": "DHHNGSP",
+      "dataset": "henry_hub_natural_gas_daily",
+      "frequency": "daily",
+      "category": "energy",
+      "units": "usd_per_mmbtu",
+      "weight": 0.2
+    },
+    {
+      "series_id": "PCOCOUSDM",
+      "dataset": "global_cocoa_price_monthly",
+      "frequency": "monthly",
+      "category": "exploratory_commodity",
+      "units": "usd_per_metric_ton",
+      "weight": 0.0,
+      "exploratory": true
+    }
+  ],
+  "hard_rules": {
+    "api_key_in_source_or_logs": false,
+    "series_without_vintage_semantics_in_training": false,
+    "cocoa_predictive_weight": 0.0,
+    "silent_forward_fill": false,
+    "revision_overwrite": false
+  }
+}
