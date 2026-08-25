@@ -1,0 +1,192 @@
+name: fred-vintage-gate-v055
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .fred-quality/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-fred-vintage-gate-v055
+  cancel-in-progress: false
+
+jobs:
+  normalize-and-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install and normalize FRED surface
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx
+          ruff check --fix \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            tests/test_fred_vintage_adapter_v05.py \
+            tests/test_fred_vintage_edge_cases_v05.py \
+            scripts/backfill_fred_series_v05.py || true
+          ruff format \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            tests/test_fred_vintage_adapter_v05.py \
+            tests/test_fred_vintage_edge_cases_v05.py \
+            scripts/backfill_fred_series_v05.py
+          rm -rf .fred-quality
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(macro): normalize FRED point-in-time adapter surface' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Execute strict FRED engineering gates
+        id: required
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports
+          python -m compileall -q src tests scripts > reports/fred-compile.log 2>&1; COMPILE=$?
+          ruff check \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            tests/test_fred_vintage_adapter_v05.py \
+            tests/test_fred_vintage_edge_cases_v05.py \
+            scripts/backfill_fred_series_v05.py > reports/fred-ruff.log 2>&1; RUFF=$?
+          ruff format --check \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            tests/test_fred_vintage_adapter_v05.py \
+            tests/test_fred_vintage_edge_cases_v05.py \
+            scripts/backfill_fred_series_v05.py > reports/fred-format.log 2>&1; FORMAT=$?
+          mypy \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            scripts/backfill_fred_series_v05.py > reports/fred-mypy.log 2>&1; MYPY=$?
+          python -m pytest -q \
+            tests/test_fred_vintage_adapter_v05.py \
+            tests/test_fred_vintage_edge_cases_v05.py \
+            --cov=xrp_regime_engine.fred_vintage_adapter \
+            --cov-report=term-missing \
+            --cov-report=json:reports/fred-coverage-v055.json \
+            --cov-fail-under=90 > reports/fred-pytest.log 2>&1; PYTEST=$?
+          bandit -q -r \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            scripts/backfill_fred_series_v05.py > reports/fred-bandit.log 2>&1; BANDIT=$?
+          python - <<PY
+          import json
+          from pathlib import Path
+          gates = {
+              'compile': $COMPILE, 'ruff': $RUFF, 'format': $FORMAT,
+              'mypy': $MYPY, 'pytest_coverage_90': $PYTEST, 'bandit': $BANDIT,
+          }
+          status = 'PASS' if all(value == 0 for value in gates.values()) else 'FAIL'
+          Path('reports/FRED_REQUIRED_GATES_V055.json').write_text(
+              json.dumps({'gates': gates, 'status': status, 'production_release': 'BLOCKED'}, indent=2, sort_keys=True) + '\n'
+          )
+          with open('$GITHUB_OUTPUT', 'a', encoding='utf-8') as handle:
+              handle.write(f'status={status}\n')
+          PY
+          exit 0
+
+      - name: Validate registry and secret boundary
+        id: registry
+        shell: bash
+        run: |
+          set +e
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          registry = json.loads(Path('config/fred_series_v05.json').read_text())
+          assert registry['authentication'] == 'read-only FRED_API_KEY'
+          series = registry['series']
+          assert len(series) >= 15
+          identifiers = [item['series_id'] for item in series]
+          assert len(identifiers) == len(set(identifiers))
+          required = {
+              'DGS2', 'DGS10', 'DGS30', 'DFII10', 'DTWEXBGS', 'NFCI', 'M2SL',
+              'SP500', 'NASDAQ100', 'VIXCLS', 'DCOILWTICO', 'DCOILBRENTEU',
+              'GASREGW', 'DHHNGSP', 'PCOCOUSDM',
+          }
+          assert required.issubset(set(identifiers))
+          cocoa = next(item for item in series if item['series_id'] == 'PCOCOUSDM')
+          assert cocoa['weight'] == 0.0
+          assert cocoa['exploratory'] is True
+          assert registry['hard_rules']['api_key_in_source_or_logs'] is False
+
+          secret_pattern = re.compile(r'(?<![a-z0-9])[a-z0-9]{32}(?![a-z0-9])')
+          violations = []
+          for path in Path('.').rglob('*'):
+              if not path.is_file() or '.git' in path.parts or path.suffix.lower() not in {'.py', '.json', '.md', '.yml', '.yaml', '.toml'}:
+                  continue
+              text = path.read_text(encoding='utf-8', errors='ignore')
+              for match in secret_pattern.finditer(text.lower()):
+                  token = match.group(0)
+                  # Test-only repeated characters are synthetic, not credentials.
+                  if len(set(token)) == 1:
+                      continue
+                  violations.append(f'{path}:{token[:4]}...[REDACTED]')
+          if violations:
+              raise SystemExit('possible 32-character API secrets in repository: ' + ', '.join(violations))
+          PY
+          STATUS=$?
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist formal FRED gate
+        shell: bash
+        env:
+          REQUIRED: ${{ steps.required.outputs.status }}
+          REGISTRY: ${{ steps.registry.outputs.status }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          required = os.environ['REQUIRED']
+          registry = int(os.environ['REGISTRY'])
+          payload = {
+              'version': '0.5.5',
+              'fred_engineering_gate': required,
+              'registry_and_secret_boundary': 'PASS' if registry == 0 else 'FAIL',
+              'mergeable_code': required == 'PASS' and registry == 0,
+              'production_release': 'BLOCKED',
+              'remaining_gates': [
+                  'real FRED_API_KEY configured in protected environment',
+                  'bounded public vintage sample',
+                  'complete manifests for registered series',
+                  'licence/source register',
+                  'missing and revision analysis',
+              ],
+          }
+          Path('reports/FRED_VINTAGE_GATE_V055.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(macro): persist formal FRED vintage engineering gate' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open FRED engineering blocker
+        if: steps.required.outputs.status != 'PASS' || steps.registry.outputs.status != '0'
+        shell: bash
+        run: |
+          TITLE='[P0] v0.5.5 FRED vintage engineering gate blocked'
+          BODY='FRED vintage typing, 90% coverage, security, registry or secret-boundary validation failed. Inspect branch reports; do not bypass point-in-time or API-key redaction semantics.'
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,area:security,gate:blocked'; fi
+
+      - name: Enforce FRED gate
+        if: steps.required.outputs.status != 'PASS' || steps.registry.outputs.status != '0'
+        run: exit 1
