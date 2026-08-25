@@ -1,0 +1,168 @@
+name: audit-and-publish-v05
+
+on:
+  push:
+    branches: [feat/xrp-engine-foundation-v0.3]
+    paths:
+      - .bootstrap/AUDIT_V05
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: audit-publish-xrp-v05
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/xrp-engine-foundation-v0.3
+          fetch-depth: 0
+
+      - name: Prefer clean integration branch when available
+        id: source
+        shell: bash
+        run: |
+          git fetch origin --prune
+          if git rev-parse --verify origin/integration/xrp-engine-v0.3.0-alpha >/dev/null 2>&1; then
+            git checkout -B integration/xrp-engine-v0.3.0-alpha origin/integration/xrp-engine-v0.3.0-alpha
+            echo "branch=integration/xrp-engine-v0.3.0-alpha" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=feat/xrp-engine-foundation-v0.3" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require a real source tree
+        id: tree
+        shell: bash
+        run: |
+          if [[ -f pyproject.toml && -d src/xrp_regime_engine && -d tests ]]; then
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record absent-source failure
+        if: steps.tree.outputs.valid != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh issue create \
+            --repo rotprods/XRP-inteliggence-x- \
+            --title "blocker: canonical source tree was not recovered" \
+            --body "The v0.5 audit could not find pyproject.toml, src/xrp_regime_engine and tests on either the integration or staged foundation branch. Bootstrap transport requires manual replacement from the canonical Drive artifact before merge." \
+            || true
+          exit 1
+
+      - name: Execute deterministic diagnostics
+        if: steps.tree.outputs.valid == 'true'
+        id: diagnostics
+        shell: bash
+        run: |
+          mkdir -p reports/ci-diagnostics-v05
+          set +e
+          python -m pip install --upgrade pip > reports/ci-diagnostics-v05/pip-upgrade.log 2>&1
+          if python -m pip install -e '.[dev]' > reports/ci-diagnostics-v05/install.log 2>&1; then
+            install=0
+          else
+            python -m pip install -e . >> reports/ci-diagnostics-v05/install.log 2>&1
+            python -m pip install pytest pytest-cov ruff mypy bandit build >> reports/ci-diagnostics-v05/install.log 2>&1
+            install=$?
+          fi
+          python -m compileall -q src tests scripts > reports/ci-diagnostics-v05/compile.log 2>&1; compile=$?
+          ruff check src tests scripts > reports/ci-diagnostics-v05/ruff.log 2>&1; ruff=$?
+          ruff format --check src tests scripts > reports/ci-diagnostics-v05/format.log 2>&1; format=$?
+          python -m pytest -q > reports/ci-diagnostics-v05/pytest.log 2>&1; pytest=$?
+          if [[ -f scripts/verify_read_only_boundary.py ]]; then
+            python scripts/verify_read_only_boundary.py > reports/ci-diagnostics-v05/read-only-boundary.log 2>&1
+            boundary=$?
+          else
+            echo "missing scripts/verify_read_only_boundary.py" > reports/ci-diagnostics-v05/read-only-boundary.log
+            boundary=2
+          fi
+          bandit -q -r src/xrp_regime_engine > reports/ci-diagnostics-v05/bandit.log 2>&1; bandit=$?
+          python -m build > reports/ci-diagnostics-v05/build.log 2>&1; build=$?
+
+          python - <<PY
+          import hashlib
+          import json
+          from pathlib import Path
+
+          codes = {
+              "install": $install,
+              "compile": $compile,
+              "ruff": $ruff,
+              "format": $format,
+              "pytest": $pytest,
+              "read_only_boundary": $boundary,
+              "bandit": $bandit,
+              "build": $build,
+          }
+          root = Path.cwd()
+          files = sorted(path for path in root.rglob("*") if path.is_file() and ".git" not in path.parts)
+          digest = hashlib.sha256()
+          for path in files:
+              digest.update(path.relative_to(root).as_posix().encode())
+              digest.update(b"\0")
+              digest.update(hashlib.sha256(path.read_bytes()).digest())
+          report = {
+              "source_branch": "${{ steps.source.outputs.branch }}",
+              "codes": codes,
+              "required_pass": all(value == 0 for value in codes.values()),
+              "file_count": len(files),
+              "source_python_files": len(list(Path("src").rglob("*.py"))),
+              "test_python_files": len(list(Path("tests").rglob("*.py"))),
+              "tree_sha256": digest.hexdigest(),
+              "production_release": "BLOCKED",
+          }
+          Path("reports/ci-diagnostics-v05/STATUS.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          echo "required_pass=$([[ $install == 0 && $compile == 0 && $ruff == 0 && $format == 0 && $pytest == 0 && $boundary == 0 && $bandit == 0 && $build == 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish auditable integration state
+        if: steps.tree.outputs.valid == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B integration/xrp-engine-v0.3.0-alpha
+          git add reports/ci-diagnostics-v05
+          if ! git diff --cached --quiet; then
+            git commit -m "test(ci): persist v0.5 convergence diagnostics"
+          fi
+          git push --force origin HEAD:integration/xrp-engine-v0.3.0-alpha
+
+      - name: Ensure canonical PR exists and report state
+        if: steps.tree.outputs.valid == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          pr=$(gh pr list --repo rotprods/XRP-inteliggence-x- --head integration/xrp-engine-v0.3.0-alpha --state open --json number --jq '.[0].number // empty')
+          if [[ -z "$pr" ]]; then
+            gh pr create \
+              --repo rotprods/XRP-inteliggence-x- \
+              --base main \
+              --head integration/xrp-engine-v0.3.0-alpha \
+              --title "feat: converge XRP intelligence engine v0.3.0-alpha" \
+              --body "Canonical read-only XRP intelligence-engine convergence. Diagnostics are persisted in reports/ci-diagnostics-v05/STATUS.json. Production remains BLOCKED pending provider, point-in-time calibration, 30-day shadow and SLO gates." \
+              --draft
+            pr=$(gh pr list --repo rotprods/XRP-inteliggence-x- --head integration/xrp-engine-v0.3.0-alpha --state open --json number --jq '.[0].number')
+          fi
+          gh pr comment "$pr" --repo rotprods/XRP-inteliggence-x- --body "v0.5 deterministic audit: required_pass=${{ steps.diagnostics.outputs.required_pass }}. Detailed command logs and exit codes are committed under reports/ci-diagnostics-v05/."
+          if [[ "${{ steps.diagnostics.outputs.required_pass }}" == "true" ]]; then
+            gh pr ready "$pr" --repo rotprods/XRP-inteliggence-x- || true
+          else
+            gh pr ready "$pr" --repo rotprods/XRP-inteliggence-x- >/dev/null 2>&1 && gh pr edit "$pr" --repo rotprods/XRP-inteliggence-x- --add-label "gate:needs-evidence" || true
+          fi
