@@ -1,0 +1,76 @@
+{
+  "version": "0.4.0",
+  "mode": "read-only",
+  "providers": [
+    {
+      "id": "coinbase-xrp-usd",
+      "provider": "coinbase",
+      "asset": "XRP",
+      "quote": "USD",
+      "endpoint": "https://api.exchange.coinbase.com/products/XRP-USD/ticker",
+      "method": "GET",
+      "authentication": "none",
+      "role": "primary-spot",
+      "freshness_slo_seconds": 60,
+      "latency_slo_ms": 1500,
+      "consensus_group": "XRP-USD"
+    },
+    {
+      "id": "kraken-xrp-usd",
+      "provider": "kraken",
+      "asset": "XRP",
+      "quote": "USD",
+      "endpoint": "https://api.kraken.com/0/public/Ticker?pair=XRPUSD",
+      "method": "GET",
+      "authentication": "none",
+      "role": "primary-spot",
+      "freshness_slo_seconds": 60,
+      "latency_slo_ms": 1800,
+      "consensus_group": "XRP-USD"
+    },
+    {
+      "id": "kucoin-xrp-usdt",
+      "provider": "kucoin",
+      "asset": "XRP",
+      "quote": "USDT",
+      "endpoint": "https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=XRP-USDT",
+      "method": "GET",
+      "authentication": "none",
+      "role": "secondary-spot",
+      "freshness_slo_seconds": 60,
+      "latency_slo_ms": 1800,
+      "consensus_group": "XRP-USDT",
+      "quality_flags": ["STABLECOIN_QUOTE"]
+    },
+    {
+      "id": "binance-xrp-usdt",
+      "provider": "binance",
+      "asset": "XRP",
+      "quote": "USDT",
+      "endpoint": "https://api.binance.com/api/v3/ticker/price?symbol=XRPUSDT",
+      "method": "GET",
+      "authentication": "none",
+      "role": "secondary-spot",
+      "freshness_slo_seconds": 60,
+      "latency_slo_ms": 1800,
+      "consensus_group": "XRP-USDT",
+      "quality_flags": ["STABLECOIN_QUOTE", "REGIONAL_AVAILABILITY_REQUIRED"]
+    }
+  ],
+  "consensus_policy": {
+    "minimum_independent_sources": 2,
+    "max_age_seconds": 60,
+    "max_relative_deviation": 0.02,
+    "max_spread_ratio": 0.03,
+    "cross_quote_mixing": false,
+    "stablecoin_proxy_requires_explicit_normalization": true
+  },
+  "security": {
+    "https_only": true,
+    "credentials_in_urls": false,
+    "follow_redirects": false,
+    "trust_environment_proxies": false,
+    "private_network_resolution": false,
+    "methods": ["GET"]
+  }
+}
