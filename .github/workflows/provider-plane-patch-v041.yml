@@ -1,0 +1,113 @@
+name: provider-plane-patch-v041
+
+on:
+  push:
+    branches: [feat/v0.4-live-provider-plane]
+    paths:
+      - .provider-patch/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: provider-plane-patch-v041
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.4-live-provider-plane
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Apply v0.4.1 contract and coverage corrections
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('src/xrp_regime_engine/live_provider_plane.py')
+          source = source_path.read_text(encoding='utf-8')
+          parse_contract = '''    def parse_price(self, payload: Mapping[str, Any]) -> Decimal:\n        raise NotImplementedError\n\n'''
+          anchor = '''    quality_flags: tuple[str, ...] = ()\n\n    def observed_at'''
+          if parse_contract not in source:
+              if anchor not in source:
+                  raise SystemExit('BaseQuoteAdapter anchor not found')
+              source = source.replace(
+                  anchor,
+                  '''    quality_flags: tuple[str, ...] = ()\n\n''' + parse_contract + '''    def observed_at''',
+                  1,
+              )
+
+          old_quotes = '''    @staticmethod\n    def healthy_quotes(probes: Iterable[ProviderProbe]) -> tuple[ProviderQuote, ...]:\n        return tuple(probe.quote for probe in probes if probe.status == "HEALTHY" and probe.quote is not None)\n'''
+          new_quotes = '''    @staticmethod\n    def healthy_quotes(probes: Iterable[ProviderProbe]) -> tuple[ProviderQuote, ...]:\n        quotes: list[ProviderQuote] = []\n        for probe in probes:\n            if probe.status == "HEALTHY" and probe.quote is not None:\n                quotes.append(probe.quote)\n        return tuple(quotes)\n'''
+          if old_quotes in source:
+              source = source.replace(old_quotes, new_quotes, 1)
+          source_path.write_text(source, encoding='utf-8')
+
+          for workflow_name in (
+              '.github/workflows/provider-plane-v04.yml',
+              '.github/workflows/provider-plane-remediate-v04.yml',
+          ):
+              path = Path(workflow_name)
+              text = path.read_text(encoding='utf-8')
+              text = text.replace(
+                  'tests/test_live_provider_plane_v04.py \\\n',
+                  'tests/test_live_provider_plane_v04.py tests/test_provider_consensus_v04.py \\\n',
+              )
+              path.write_text(text, encoding='utf-8')
+          PY
+          rm -rf .provider-patch
+
+      - name: Install and normalize
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx
+          ruff check --fix src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py tests/test_provider_consensus_v04.py scripts/probe_public_providers_v04.py || true
+          ruff format src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py tests/test_provider_consensus_v04.py scripts/probe_public_providers_v04.py
+
+      - name: Execute corrected provider gate
+        run: |
+          python -m compileall -q src tests scripts
+          ruff check src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py tests/test_provider_consensus_v04.py scripts/probe_public_providers_v04.py
+          ruff format --check src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py tests/test_provider_consensus_v04.py scripts/probe_public_providers_v04.py
+          mypy src/xrp_regime_engine/live_provider_plane.py scripts/probe_public_providers_v04.py
+          python -m pytest -q tests/test_live_provider_plane_v04.py tests/test_provider_consensus_v04.py \
+            --cov=xrp_regime_engine.live_provider_plane \
+            --cov=xrp_regime_engine.provider_consensus \
+            --cov-report=term-missing \
+            --cov-report=json:reports/provider-coverage-v041.json \
+            --cov-fail-under=90
+          bandit -q -r src/xrp_regime_engine/live_provider_plane.py scripts/probe_public_providers_v04.py
+
+      - name: Commit verified patch
+        shell: bash
+        run: |
+          printf '{"version":"0.4.1","contract":"PASS","coverage_threshold":90,"production_release":"BLOCKED"}\n' > reports/PROVIDER_PLANE_PATCH_GATE_V041.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(data): complete provider base contract and consensus coverage' || true
+          git push origin HEAD:feat/v0.4-live-provider-plane
+
+      - name: Open patch blocker issue
+        if: failure()
+        shell: bash
+        run: |
+          gh issue create --title '[P0] Resolve v0.4.1 provider contract or coverage gate' \
+            --body 'The provider base contract, consensus suite, typing, coverage or security gate failed. Inspect this run; do not weaken the independent-source or coverage threshold without an evidence-backed ADR.' \
+            --label 'priority:p0,area:data,gate:blocked' || true
