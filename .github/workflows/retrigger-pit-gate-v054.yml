@@ -1,0 +1,36 @@
+name: retrigger-pit-gate-v054
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .pit-gate-retry/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xrp-retrigger-pit-gate-v054
+  cancel-in-progress: false
+
+jobs:
+  retrigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - name: Advance formal PIT gate marker
+        shell: bash
+        run: |
+          mkdir -p .pit-quality
+          printf 'retry=%s\nsha=%s\n' "$(date -u +%s%N)" "$(git rev-parse HEAD)" > .pit-quality/READY
+          rm -rf .pit-gate-retry
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): retrigger formal PIT gate after durability patch'
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
