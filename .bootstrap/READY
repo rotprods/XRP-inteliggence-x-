@@ -1,2 +1,3 @@
 xrp-engine-bootstrap-v0.3
-retry=2026-08-25T00:00:00Z
+recovery-mode=truncated-gzip-safe
+retry=2026-08-25T12:00:00Z
