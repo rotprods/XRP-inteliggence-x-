@@ -1,0 +1,88 @@
+name: provider-plane-v04
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - src/xrp_regime_engine/live_provider_plane.py
+      - src/xrp_regime_engine/provider_consensus.py
+      - tests/test_live_provider_plane_v04.py
+      - scripts/probe_public_providers_v04.py
+      - config/provider_registry_v04.json
+      - docs/data/LIVE_PROVIDER_PLANE_V04.md
+      - .github/workflows/provider-plane-v04.yml
+  push:
+    branches: [feat/v0.4-live-provider-plane]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-plane-v04-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx
+      - name: Static contract
+        run: |
+          python -m compileall -q src tests scripts
+          ruff check src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py scripts/probe_public_providers_v04.py
+          ruff format --check src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py scripts/probe_public_providers_v04.py
+          mypy src/xrp_regime_engine/live_provider_plane.py scripts/probe_public_providers_v04.py
+      - name: Deterministic tests
+        run: |
+          python -m pytest -q tests/test_live_provider_plane_v04.py \
+            --cov=xrp_regime_engine.live_provider_plane \
+            --cov=xrp_regime_engine.provider_consensus \
+            --cov-report=term-missing \
+            --cov-fail-under=90
+      - name: Security boundary
+        run: |
+          bandit -q -r src/xrp_regime_engine/live_provider_plane.py scripts/probe_public_providers_v04.py
+          python - <<'PY'
+          from pathlib import Path
+          source = '\n'.join(
+              path.read_text(encoding='utf-8', errors='ignore').lower()
+              for path in (
+                  Path('src/xrp_regime_engine/live_provider_plane.py'),
+                  Path('scripts/probe_public_providers_v04.py'),
+              )
+          )
+          forbidden = (
+              'post_order', 'place_order', 'execute_trade', 'withdraw_funds',
+              'private_key', 'seed_phrase', 'wallet_sign', 'submit_transaction',
+          )
+          hits = [token for token in forbidden if token in source]
+          if hits:
+              raise SystemExit(f'forbidden financial-execution primitives: {hits}')
+          PY
+      - name: Registry contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          registry = json.loads(Path('config/provider_registry_v04.json').read_text())
+          assert registry['mode'] == 'read-only'
+          assert len(registry['providers']) >= 4
+          assert all(item['method'] == 'GET' for item in registry['providers'])
+          assert all(item['authentication'] == 'none' for item in registry['providers'])
+          groups = {item['consensus_group'] for item in registry['providers']}
+          assert groups == {'XRP-USD', 'XRP-USDT'}
+          assert registry['consensus_policy']['cross_quote_mixing'] is False
+          PY
