@@ -1,0 +1,142 @@
+name: historical-typing-patch-v052
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .historical-typing/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: historical-typing-patch-v052
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Apply strict typing corrections
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/xrp_regime_engine/historical_store.py')
+          text = path.read_text(encoding='utf-8')
+
+          text = text.replace(
+              '''    if parsed.scheme not in {"https", "http"} or not parsed.hostname:\n        raise ValueError("source_url must be an absolute HTTP(S) URL")\n    if parsed.username or parsed.password:\n        raise ValueError("credentials are forbidden in source URLs")\n    netloc = parsed.hostname\n''',
+              '''    if parsed.scheme not in {"https", "http"}:\n        raise ValueError("source_url must be an absolute HTTP(S) URL")\n    host = parsed.hostname\n    if host is None:\n        raise ValueError("source_url must be an absolute HTTP(S) URL")\n    if parsed.username or parsed.password:\n        raise ValueError("credentials are forbidden in source URLs")\n    netloc = host\n''',
+              1,
+          )
+
+          old_read = '''        rows = tuple(json.loads(line) for line in payload.splitlines() if line)\n        if len(rows) != partition.row_count:\n            raise RuntimeError("normalized partition row count does not match manifest")\n        return rows\n'''
+          new_read = '''        rows: list[dict[str, Any]] = []\n        for line in payload.splitlines():\n            if not line:\n                continue\n            decoded = json.loads(line)\n            if not isinstance(decoded, dict):\n                raise RuntimeError("normalized partition row must be a JSON object")\n            rows.append(decoded)\n        if len(rows) != partition.row_count:\n            raise RuntimeError("normalized partition row count does not match manifest")\n        return tuple(rows)\n'''
+          if old_read not in text:
+              raise SystemExit('read_partition typing block not found')
+          text = text.replace(old_read, new_read, 1)
+
+          old_manifest = '''        unsigned = {\n            "dataset": dataset,\n            "schema_version": schema_version,\n            "created_at": created.isoformat(),\n            "partitions": [partition.to_dict() for partition in ordered],\n            "total_rows": sum(partition.row_count for partition in ordered),\n        }\n        return cls(\n            dataset=dataset,\n            schema_version=schema_version,\n            created_at=created,\n            partitions=ordered,\n            total_rows=unsigned["total_rows"],\n            manifest_sha256=sha256_hex(canonical_json_bytes(unsigned)),\n        )\n'''
+          new_manifest = '''        total_rows = sum(partition.row_count for partition in ordered)\n        unsigned = {\n            "dataset": dataset,\n            "schema_version": schema_version,\n            "created_at": created.isoformat(),\n            "partitions": [partition.to_dict() for partition in ordered],\n            "total_rows": total_rows,\n        }\n        return cls(\n            dataset=dataset,\n            schema_version=schema_version,\n            created_at=created,\n            partitions=ordered,\n            total_rows=total_rows,\n            manifest_sha256=sha256_hex(canonical_json_bytes(unsigned)),\n        )\n'''
+          if old_manifest not in text:
+              raise SystemExit('manifest typing block not found')
+          path.write_text(text.replace(old_manifest, new_manifest, 1), encoding='utf-8')
+          PY
+          rm -rf .historical-typing
+
+      - name: Install and normalize full v0.5 surface
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx
+          ruff check --fix \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            scripts/backfill_xrp_spot_v05.py || true
+          ruff format \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            scripts/backfill_xrp_spot_v05.py
+
+      - name: Execute strict v0.5 gates
+        run: |
+          python -m compileall -q src tests scripts
+          ruff check \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            scripts/backfill_xrp_spot_v05.py
+          ruff format --check \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            scripts/backfill_xrp_spot_v05.py
+          mypy \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            scripts/backfill_xrp_spot_v05.py
+          python -m pytest -q \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            --cov=xrp_regime_engine.historical_store \
+            --cov=xrp_regime_engine.historical_backfill \
+            --cov=xrp_regime_engine.historical_spot_adapters \
+            --cov-report=term-missing \
+            --cov-report=json:reports/historical-v052-coverage.json \
+            --cov-fail-under=90
+          bandit -q -r \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            scripts/backfill_xrp_spot_v05.py
+
+      - name: Commit verified typing patch
+        shell: bash
+        run: |
+          printf '{"version":"0.5.2","mypy":"PASS","coverage_threshold":90,"production_release":"BLOCKED"}\n' > reports/HISTORICAL_TYPING_GATE_V052.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(research): enforce strict PIT store and backfill typing' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open strict typing blocker
+        if: failure()
+        shell: bash
+        run: |
+          gh issue create --title '[P0] Resolve v0.5.2 PIT typing or coverage gate' \
+            --body 'The point-in-time store, runner or historical adapters failed strict typing, coverage, security or deterministic tests. Inspect this run; do not weaken availability or immutable-storage semantics.' \
+            --label 'priority:p0,area:data,type:research,gate:blocked' || true
