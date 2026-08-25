@@ -1,0 +1,143 @@
+name: provider-plane-remediate-v04
+
+on:
+  push:
+    branches: [feat/v0.4-live-provider-plane]
+    paths:
+      - .provider-quality/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: provider-plane-remediate-v04
+  cancel-in-progress: false
+
+jobs:
+  remediate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.4-live-provider-plane
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx
+
+      - name: Apply deterministic formatting and lint fixes
+        shell: bash
+        run: |
+          ruff check --fix src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py scripts/probe_public_providers_v04.py || true
+          ruff format src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py scripts/probe_public_providers_v04.py
+          rm -rf .provider-quality
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(data): normalize live-provider plane implementation' || true
+          git push origin HEAD:feat/v0.4-live-provider-plane
+
+      - name: Execute required engineering gates
+        id: required
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports
+          python -m compileall -q src tests scripts > reports/provider-compile.log 2>&1; COMPILE=$?
+          ruff check src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py scripts/probe_public_providers_v04.py > reports/provider-ruff.log 2>&1; RUFF=$?
+          ruff format --check src/xrp_regime_engine/live_provider_plane.py tests/test_live_provider_plane_v04.py scripts/probe_public_providers_v04.py > reports/provider-format.log 2>&1; FORMAT=$?
+          python -m pytest -q tests/test_live_provider_plane_v04.py \
+            --cov=xrp_regime_engine.live_provider_plane \
+            --cov=xrp_regime_engine.provider_consensus \
+            --cov-report=term-missing \
+            --cov-report=json:reports/provider-coverage.json \
+            --cov-fail-under=90 > reports/provider-pytest.log 2>&1; PYTEST=$?
+          mypy src/xrp_regime_engine/live_provider_plane.py scripts/probe_public_providers_v04.py > reports/provider-mypy.log 2>&1; MYPY=$?
+          bandit -q -r src/xrp_regime_engine/live_provider_plane.py scripts/probe_public_providers_v04.py > reports/provider-bandit.log 2>&1; BANDIT=$?
+          python - <<PY
+          import json
+          from pathlib import Path
+          gates = {'compile': $COMPILE, 'ruff': $RUFF, 'format': $FORMAT, 'pytest_coverage_90': $PYTEST, 'mypy': $MYPY, 'bandit': $BANDIT}
+          status = 'PASS' if all(value == 0 for value in gates.values()) else 'FAIL'
+          Path('reports/PROVIDER_PLANE_REQUIRED_GATES_V04.json').write_text(
+              json.dumps({'gates': gates, 'status': status, 'production_release': 'BLOCKED'}, indent=2, sort_keys=True) + '\n'
+          )
+          with open('$GITHUB_OUTPUT', 'a', encoding='utf-8') as handle:
+              handle.write(f'status={status}\n')
+          PY
+          exit 0
+
+      - name: Execute live public probe as separate evidence
+        id: live
+        shell: bash
+        run: |
+          set +e
+          python scripts/probe_public_providers_v04.py --output reports/provider-live-probe-v04.json --require-consensus > reports/provider-live-probe.log 2>&1
+          STATUS=$?
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist gate result
+        shell: bash
+        env:
+          REQUIRED: ${{ steps.required.outputs.status }}
+          LIVE: ${{ steps.live.outputs.status }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          required = os.environ['REQUIRED']
+          live = int(os.environ['LIVE'])
+          payload = {
+              'version': '0.4.0',
+              'engineering_gate': required,
+              'live_provider_evidence': 'PASS' if live == 0 else 'DEGRADED',
+              'mergeable_code': required == 'PASS',
+              'production_release': 'BLOCKED',
+              'production_blockers': [
+                  'sustained regional provider evidence',
+                  'provider substitution drill',
+                  'operational persistence and SLO measurement',
+              ],
+          }
+          Path('reports/PROVIDER_PLANE_GATE_V04.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(data): persist provider-plane engineering and live evidence' || true
+          git push origin HEAD:feat/v0.4-live-provider-plane
+
+      - name: Open live-data evidence issue when degraded
+        if: steps.live.outputs.status != '0'
+        shell: bash
+        run: |
+          TITLE='[P0] Complete sustained regional evidence for v0.4 provider plane'
+          BODY=$(cat <<EOF
+          The v0.4 provider implementation is evaluated independently from public reachability. The latest public probe did not produce a two-source consensus for any quote group.
+
+          Evidence: `reports/provider-live-probe-v04.json` and `reports/provider-live-probe.log` on `feat/v0.4-live-provider-plane`.
+
+          Do not weaken the independent-source threshold. Validate regional availability, add a contract-tested substitute or document a controlled degradation policy.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,gate:needs-evidence'; fi
+
+      - name: Enforce required code gate
+        if: steps.required.outputs.status != 'PASS'
+        run: exit 1
