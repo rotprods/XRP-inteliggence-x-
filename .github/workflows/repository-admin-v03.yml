@@ -1,0 +1,59 @@
+name: repository-admin-v03
+
+on:
+  push:
+    branches: [feat/xrp-engine-foundation-v0.3]
+    paths:
+      - .bootstrap/ADMIN_V03
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  configure:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create canonical labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          create_label() {
+            gh label create "$1" --repo rotprods/XRP-inteliggence-x- --color "$2" --description "$3" --force
+          }
+          create_label "priority:p0" "B60205" "Critical path / release blocker"
+          create_label "priority:p1" "D93F0B" "High priority"
+          create_label "type:feature" "1D76DB" "Product or engineering capability"
+          create_label "type:bug" "D73A4A" "Reproducible defect"
+          create_label "type:research" "5319E7" "Evidence and model research"
+          create_label "type:governance" "6F42C1" "Repository and operational governance"
+          create_label "area:data" "0E8A16" "Data contracts, ingestion and storage"
+          create_label "area:providers" "006B75" "Provider adapters and assurance"
+          create_label "area:macro" "FBCA04" "Macro, equities and commodities"
+          create_label "area:xrpl" "0052CC" "XRPL and XRP-specific intelligence"
+          create_label "area:model" "C5DEF5" "Features, regime engine and calibration"
+          create_label "area:api" "BFDADC" "API, CLI and contracts"
+          create_label "area:sre" "7057FF" "Reliability and observability"
+          create_label "area:security" "8B0000" "Security boundary and hardening"
+          create_label "gate:blocked" "000000" "Blocked by an external or unmet release gate"
+          create_label "gate:needs-evidence" "E99695" "Implementation exists but evidence is incomplete"
+          create_label "dependencies" "0366D6" "Dependency update"
+          create_label "python" "3572A5" "Python package"
+          create_label "github-actions" "2088FF" "GitHub Actions automation"
+          create_label "proposal" "A2EEEF" "Evidence-backed proposal"
+
+      - name: Label program epics and canonical PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh issue list --repo rotprods/XRP-inteliggence-x- --state open --limit 100 --json number,title --jq '.[] | select(.title | startswith("epic:")) | .number' \
+            | while read -r issue; do
+                gh issue edit "$issue" --repo rotprods/XRP-inteliggence-x- --add-label "priority:p0,type:feature,gate:blocked" || true
+              done
+          pr=$(gh pr list --repo rotprods/XRP-inteliggence-x- --head integration/xrp-engine-v0.3.0-alpha --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$pr" ]]; then
+            gh pr edit "$pr" --repo rotprods/XRP-inteliggence-x- --add-label "priority:p0,type:feature,area:model,gate:needs-evidence" || true
+          fi
