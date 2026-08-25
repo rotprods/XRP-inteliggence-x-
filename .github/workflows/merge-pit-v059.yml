@@ -1,0 +1,256 @@
+name: merge-pit-v059
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .merge-pit/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: xrp-merge-pit-v059
+  cancel-in-progress: false
+
+jobs:
+  verify-merge-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: feat/v0.5-point-in-time-backfill
+      VERSION: v0.5.0-beta.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Wait for formal v0.5 gate and pull request
+        shell: bash
+        run: |
+          for attempt in $(seq 1 160); do
+            git fetch origin "$BRANCH" main --prune
+            git reset --hard "origin/$BRANCH"
+            PR=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+            if [ -n "$PR" ] && [ -f reports/PIT_RELEASE_GATE_V059.json ]; then
+              STATUS=$(python -c "import json; print(json.load(open('reports/PIT_RELEASE_GATE_V059.json')).get('engineering_release_gate',''))")
+              if [ "$STATUS" = 'PASS' ]; then
+                echo "$PR" > /tmp/pit_pr_number
+                exit 0
+              fi
+            fi
+            echo "waiting for passing v0.5 gate and PR ${attempt}/160"
+            sleep 15
+          done
+          echo 'passing PIT_RELEASE_GATE_V059.json or open PR did not materialize' > /tmp/pit-merge-blockers.txt
+          exit 1
+
+      - name: Validate release evidence and production boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          failures = []
+          release = json.loads(Path('reports/PIT_RELEASE_GATE_V059.json').read_text())
+          if release.get('engineering_release_gate') != 'PASS':
+              failures.append('v0.5 engineering release gate is not PASS')
+          if release.get('production_release') != 'BLOCKED':
+              failures.append('production release must remain BLOCKED')
+          mandatory = set(release.get('mandatory_gates', []))
+          for gate in (
+              'immutable-raw-store', 'PIT-catalog', 'durable-resume-manifest',
+              'FRED-vintage-adapter', 'historical-quality-audit', 'research-snapshot',
+              'targeted-coverage-90', 'full-pytest', 'mypy', 'bandit', 'docker', 'api-health',
+          ):
+              if gate not in mandatory:
+                  failures.append(f'missing mandatory release evidence: {gate}')
+          for component in (
+              'reports/MERGE_GATE_V04.json',
+              'reports/MERGE_GATE_PROVIDER_V04.json',
+              'reports/PIT_RESUME_DURABILITY_GATE_V054.json',
+              'reports/FRED_VINTAGE_GATE_V055.json',
+              'reports/DATA_GOVERNANCE_GATE_V056.json',
+              'reports/HISTORICAL_QUALITY_GATE_V057.json',
+              'reports/RESEARCH_SNAPSHOT_GATE_V058.json',
+          ):
+              if not Path(component).is_file():
+                  failures.append(f'missing component report: {component}')
+          if failures:
+              Path('/tmp/pit-merge-blockers.txt').write_text('\n'.join(failures) + '\n')
+              raise SystemExit('; '.join(failures))
+          PY
+
+      - name: Install exact release toolchain
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx build
+          python -m pip install -r requirements/research-v05.txt
+
+      - name: Repeat mandatory release gates
+        shell: bash
+        run: |
+          python -m compileall -q src tests scripts
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+          mypy \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            src/xrp_regime_engine/fred_vintage_adapter.py \
+            src/xrp_regime_engine/historical_quality.py \
+            src/xrp_regime_engine/research_snapshot.py \
+            scripts/backfill_xrp_spot_v05.py \
+            scripts/backfill_fred_series_v05.py \
+            scripts/audit_historical_candles_v05.py \
+            scripts/build_research_snapshot_v05.py
+          python -m pytest -q \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            tests/test_historical_edge_cases_v05.py \
+            tests/test_pit_resume_durability_v054.py \
+            tests/test_fred_vintage_adapter_v05.py \
+            tests/test_fred_vintage_edge_cases_v05.py \
+            tests/test_historical_quality_v05.py \
+            tests/test_audit_historical_candles_cli_v05.py \
+            tests/test_research_snapshot_v05.py \
+            tests/test_build_research_snapshot_cli_v05.py \
+            --cov=xrp_regime_engine.historical_store \
+            --cov=xrp_regime_engine.historical_backfill \
+            --cov=xrp_regime_engine.historical_spot_adapters \
+            --cov=xrp_regime_engine.fred_vintage_adapter \
+            --cov=xrp_regime_engine.historical_quality \
+            --cov=xrp_regime_engine.research_snapshot \
+            --cov-report=term-missing \
+            --cov-report=json:reports/pit-merge-targeted-coverage-v059.json \
+            --cov-fail-under=90
+          python -m pytest -q --cov=xrp_regime_engine --cov-report=term-missing --cov-report=json:reports/pit-merge-full-coverage-v059.json --cov-fail-under=70
+          bandit -q -r src/xrp_regime_engine scripts
+          rm -rf dist build
+          python -m build
+          docker build -t xrp-regime-engine:v0.5.0-beta.1 .
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from xrp_regime_engine.api import app
+          response = TestClient(app).get('/health')
+          assert response.status_code == 200, response.text
+          print(response.json())
+          PY
+
+      - name: Persist final v0.5 merge evidence
+        shell: bash
+        run: |
+          rm -rf .merge-pit
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          payload = {
+              'version': 'v0.5.0-beta.1',
+              'merge_gate': 'PASS',
+              'verified_at': datetime.now(timezone.utc).isoformat(),
+              'source_branch': 'feat/v0.5-point-in-time-backfill',
+              'mandatory_gates_repeated': True,
+              'artifacts': sorted(str(path) for path in Path('dist').glob('*')),
+              'production_release': 'BLOCKED',
+              'remaining_external_gates': [
+                  'complete historical backfills and manifests',
+                  'protected FRED_API_KEY sample',
+                  'source licence approvals',
+                  'restore/replay drill',
+                  'walk-forward calibration',
+                  '30-day immutable shadow operation',
+                  'measured SLO and incident evidence',
+              ],
+          }
+          Path('reports/MERGE_GATE_PIT_V059.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          PY
+          tar -czf xrp-regime-engine-v0.5.0-beta.1-evidence.tar.gz \
+            reports/PIT_RELEASE_GATE_V059.json \
+            reports/MERGE_GATE_PIT_V059.json \
+            reports/MERGE_GATE_V04.json \
+            reports/MERGE_GATE_PROVIDER_V04.json \
+            reports/PIT_RESUME_DURABILITY_GATE_V054.json \
+            reports/FRED_VINTAGE_GATE_V055.json \
+            reports/DATA_GOVERNANCE_GATE_V056.json \
+            reports/HISTORICAL_QUALITY_GATE_V057.json \
+            reports/RESEARCH_SNAPSHOT_GATE_V058.json \
+            config/historical_datasets_v05.json \
+            config/fred_series_v05.json \
+            config/research_snapshot_profiles_v05.json \
+            config/source_licence_registry_v05.json \
+            config/data_retention_v05.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): persist passing v0.5 merge evidence' || true
+          git push origin HEAD:"$BRANCH"
+
+      - name: Mark PR ready and merge research beta
+        shell: bash
+        run: |
+          PR=$(cat /tmp/pit_pr_number)
+          gh pr ready "$PR" || true
+          gh pr comment "$PR" --body 'The v0.5 merge controller repeated immutable store, PIT timing, FRED vintage, quality audit, snapshot, 90% targeted coverage, full regression, typing, security, package, Docker and API gates. This is a research engineering beta; production remains BLOCKED.'
+          gh pr merge "$PR" --squash --delete-branch \
+            --subject 'feat(research): point-in-time historical substrate v0.5' \
+            --body 'Adds immutable raw/provenance storage, durable resumable backfills, Coinbase/Binance history, FRED vintages, data governance, historical quality auditing and fail-closed research snapshots. Production remains blocked pending complete data, licences, calibration, shadow and SLO evidence.'
+
+      - name: Create prerelease with executable artifacts and evidence
+        shell: bash
+        run: |
+          git fetch origin main --tags
+          MAIN_SHA=$(git rev-parse origin/main)
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release edit "$VERSION" --target "$MAIN_SHA" --prerelease --title "$VERSION — Point-in-Time Research Beta"
+            gh release upload "$VERSION" dist/* xrp-regime-engine-v0.5.0-beta.1-evidence.tar.gz --clobber
+          else
+            gh release create "$VERSION" --target "$MAIN_SHA" --prerelease \
+              --title "$VERSION — Point-in-Time Research Beta" \
+              --notes 'Read-only engineering beta for immutable historical storage, point-in-time revisions, data-quality auditing and research snapshots. Not a calibrated production decision system. Production remains blocked pending complete backfills, source approvals, restore/replay, walk-forward calibration, 30-day shadow operation and SLO evidence.' \
+              dist/* xrp-regime-engine-v0.5.0-beta.1-evidence.tar.gz
+          fi
+
+      - name: Maintain external beta backlog
+        shell: bash
+        run: |
+          declare -A issues
+          issues['[P0] Complete canonical historical backfills and manifests']='Backfill XRP spot, BTC, ETH, derivatives, all registered FRED vintages and later approved equity sources. Quantify missing intervals, revisions, provider substitutions and manifest hashes.'
+          issues['[P0] Execute restore and replay drill for v0.5 datasets']='Restore raw objects, partitions, catalogs, checkpoints and manifests into a clean environment; replay a dataset and prove identical semantic hashes.'
+          issues['[P0] Run leakage-safe walk-forward calibration']='Consume only point-in-time snapshots, use purged/embargoed splits, report Brier, calibration, directional metrics, false alerts, MAE and ablations.'
+          issues['[P0] Complete immutable 30-day shadow operation']='Persist predictions before outcomes, append realized returns later, prove no retrospective mutation and measure provider/model SLOs for at least 30 days.'
+          for title in "${!issues[@]}"; do
+            body=${issues[$title]}
+            existing=$(gh issue list --state open --search "$title in:title" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+            if [ -n "$existing" ]; then gh issue comment "$existing" --body "$body"; else gh issue create --title "$title" --body "$body" --label 'priority:p0,gate:needs-evidence'; fi
+          done
+
+      - name: Open fail-closed merge blocker
+        if: failure()
+        shell: bash
+        run: |
+          TITLE='[P0] v0.5 point-in-time merge gate blocked'
+          DETAILS=$(cat /tmp/pit-merge-blockers.txt 2>/dev/null || echo 'One or more repeated merge gates failed. Inspect this workflow run and branch reports.')
+          BODY=$(cat <<EOF
+          The v0.5 merge controller refused to merge `${BRANCH}`.
+
+          ${DETAILS}
+
+          Do not bypass immutable provenance, point-in-time timing, coverage, typing, security, Docker or API gates.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,gate:blocked'; fi
