@@ -1,0 +1,70 @@
+{
+  "version": "0.5.0",
+  "classification": {
+    "public_market_data": "INTERNAL_DERIVED",
+    "public_regulatory_event": "INTERNAL_DERIVED",
+    "provider_credential": "SECRET",
+    "wallet_secret": "FORBIDDEN",
+    "personal_financial_context": "RESTRICTED_EXTERNAL_SYSTEM",
+    "model_prediction": "INTERNAL_AUDIT",
+    "realized_outcome": "INTERNAL_AUDIT"
+  },
+  "retention": [
+    {
+      "class": "raw_public_payload",
+      "default_days": 365,
+      "immutable": true,
+      "exception": "provider licence or legal requirement may shorten retention",
+      "deletion_requires_manifest_update": true
+    },
+    {
+      "class": "normalized_market_record",
+      "default_days": 2555,
+      "immutable": true,
+      "exception": "provider licence or legal requirement may shorten retention",
+      "deletion_requires_manifest_update": true
+    },
+    {
+      "class": "dataset_manifest",
+      "default_days": 3650,
+      "immutable": true,
+      "exception": "none without governance approval",
+      "deletion_requires_manifest_update": false
+    },
+    {
+      "class": "provider_health_probe",
+      "default_days": 90,
+      "immutable": true,
+      "exception": "aggregate SLO reports may be retained longer",
+      "deletion_requires_manifest_update": false
+    },
+    {
+      "class": "shadow_prediction",
+      "default_days": 3650,
+      "immutable": true,
+      "exception": "none without model-governance approval",
+      "deletion_requires_manifest_update": false
+    },
+    {
+      "class": "audit_log",
+      "default_days": 365,
+      "immutable": true,
+      "exception": "security incidents may require longer retention",
+      "deletion_requires_manifest_update": false
+    },
+    {
+      "class": "secret_value",
+      "default_days": 0,
+      "immutable": false,
+      "exception": "stored only in approved secret manager, never in datasets",
+      "deletion_requires_manifest_update": false
+    }
+  ],
+  "hard_rules": {
+    "wallet_secrets_in_system": false,
+    "personal_financial_context_in_market_engine": false,
+    "silent_data_deletion": false,
+    "secret_values_in_logs_or_manifests": false,
+    "retention_without_licence_review_in_production": false
+  }
+}
