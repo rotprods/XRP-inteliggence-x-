@@ -1,0 +1,201 @@
+name: pit-backfill-gate-v053
+
+on:
+  push:
+    branches: [feat/v0.5-point-in-time-backfill]
+    paths:
+      - .pit-quality/READY
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: xrp-pit-backfill-gate-v053
+  cancel-in-progress: false
+
+jobs:
+  remediate-and-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-point-in-time-backfill
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Reconcile final CLI typing and evidence prerequisites
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/backfill_xrp_spot_v05.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'from xrp_regime_engine.historical_backfill import BackfillRunner, BackfillWindow',
+              'from xrp_regime_engine.historical_backfill import BackfillRunner, BackfillWindow, HistoricalAdapter',
+          )
+          marker = '    client = HistoricalHTTPClient(allowed_hosts=historical_allowed_hosts())\n'
+          if '    adapter: HistoricalAdapter\n' not in text:
+              if marker not in text:
+                  raise SystemExit('historical CLI adapter anchor not found')
+              text = text.replace(marker, marker + '    adapter: HistoricalAdapter\n', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm -rf .pit-quality
+
+      - name: Install and normalize complete PIT surface
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if ! python -m pip install -e '.[dev]'; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov ruff mypy bandit httpx build
+          ruff check --fix \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            tests/test_historical_edge_cases_v05.py \
+            scripts/backfill_xrp_spot_v05.py || true
+          ruff format \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            tests/test_historical_edge_cases_v05.py \
+            scripts/backfill_xrp_spot_v05.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): normalize complete PIT backfill surface' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Execute required PIT engineering gates
+        id: required
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports
+          FILES=(
+            src/xrp_regime_engine/historical_store.py
+            src/xrp_regime_engine/historical_backfill.py
+            src/xrp_regime_engine/historical_spot_adapters.py
+            tests/test_historical_store_v05.py
+            tests/test_historical_store_envelopes_v051.py
+            tests/test_historical_spot_adapters_v05.py
+            tests/test_historical_edge_cases_v05.py
+            scripts/backfill_xrp_spot_v05.py
+          )
+          python -m compileall -q src tests scripts > reports/pit-compile.log 2>&1; COMPILE=$?
+          ruff check "${FILES[@]}" > reports/pit-ruff.log 2>&1; RUFF=$?
+          ruff format --check "${FILES[@]}" > reports/pit-format.log 2>&1; FORMAT=$?
+          mypy \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            scripts/backfill_xrp_spot_v05.py > reports/pit-mypy.log 2>&1; MYPY=$?
+          python -m pytest -q \
+            tests/test_historical_store_v05.py \
+            tests/test_historical_store_envelopes_v051.py \
+            tests/test_historical_spot_adapters_v05.py \
+            tests/test_historical_edge_cases_v05.py \
+            --cov=xrp_regime_engine.historical_store \
+            --cov=xrp_regime_engine.historical_backfill \
+            --cov=xrp_regime_engine.historical_spot_adapters \
+            --cov-report=term-missing \
+            --cov-report=json:reports/pit-coverage-v053.json \
+            --cov-fail-under=90 > reports/pit-pytest.log 2>&1; PYTEST=$?
+          bandit -q -r \
+            src/xrp_regime_engine/historical_store.py \
+            src/xrp_regime_engine/historical_backfill.py \
+            src/xrp_regime_engine/historical_spot_adapters.py \
+            scripts/backfill_xrp_spot_v05.py > reports/pit-bandit.log 2>&1; BANDIT=$?
+          python -m build > reports/pit-build.log 2>&1; BUILD=$?
+          python - <<PY
+          import json
+          from pathlib import Path
+          gates = {
+              'compile': $COMPILE, 'ruff': $RUFF, 'format': $FORMAT,
+              'mypy': $MYPY, 'pytest_coverage_90': $PYTEST,
+              'bandit': $BANDIT, 'package_build': $BUILD,
+          }
+          status = 'PASS' if all(value == 0 for value in gates.values()) else 'FAIL'
+          Path('reports/PIT_REQUIRED_GATES_V053.json').write_text(
+              json.dumps({'gates': gates, 'status': status, 'production_release': 'BLOCKED'}, indent=2, sort_keys=True) + '\n'
+          )
+          with open('$GITHUB_OUTPUT', 'a', encoding='utf-8') as handle:
+              handle.write(f'status={status}\n')
+          PY
+          exit 0
+
+      - name: Execute full repository regression
+        id: full
+        shell: bash
+        run: |
+          set +e
+          python -m pytest -q > reports/pit-full-pytest.log 2>&1
+          STATUS=$?
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist formal PIT gate
+        shell: bash
+        env:
+          REQUIRED: ${{ steps.required.outputs.status }}
+          FULL: ${{ steps.full.outputs.status }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          required = os.environ['REQUIRED']
+          full = int(os.environ['FULL'])
+          sample_path = Path('reports/HISTORICAL_SAMPLE_GATE_V05.json')
+          sample = json.loads(sample_path.read_text()) if sample_path.exists() else {'status': 'NOT_RUN'}
+          payload = {
+              'version': '0.5.3',
+              'pit_engineering_gate': required,
+              'full_repository_tests': 'PASS' if full == 0 else 'FAIL',
+              'bounded_live_sample': sample.get('status', 'NOT_RUN'),
+              'mergeable_code': required == 'PASS' and full == 0,
+              'production_release': 'BLOCKED',
+              'production_blockers': [
+                  'complete historical provider backfills',
+                  'quantified missing intervals and revisions',
+                  'macro point-in-time vintages',
+                  'dataset license registry',
+                  'restore and replay drill',
+                  'walk-forward calibration and shadow evaluation',
+              ],
+          }
+          Path('reports/PIT_BACKFILL_GATE_V05.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(research): persist formal PIT backfill gate' || true
+          git push origin HEAD:feat/v0.5-point-in-time-backfill
+
+      - name: Open engineering blocker
+        if: steps.required.outputs.status != 'PASS' || steps.full.outputs.status != '0'
+        shell: bash
+        run: |
+          TITLE='[P0] v0.5 PIT backfill engineering gate blocked'
+          BODY='Strict typing, 90% targeted coverage, security, package build or the full repository regression failed. Inspect reports on `feat/v0.5-point-in-time-backfill`; do not weaken point-in-time, immutable-storage or cursor semantics.'
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,gate:blocked'; fi
+
+      - name: Enforce required code gate
+        if: steps.required.outputs.status != 'PASS' || steps.full.outputs.status != '0'
+        run: exit 1
