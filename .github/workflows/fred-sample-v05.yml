@@ -1,0 +1,142 @@
+name: fred-sample-v05
+
+on:
+  workflow_dispatch:
+    inputs:
+      series_id:
+        description: Registered FRED series ID
+        required: false
+        default: DGS10
+      observation_days:
+        description: Observation-window days
+        required: false
+        default: "60"
+      vintage_days:
+        description: Vintage-window days
+        required: false
+        default: "30"
+  schedule:
+    - cron: "31 5 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: xrp-fred-sample-v05
+  cancel-in-progress: true
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Check protected read-only credential
+        id: secret
+        shell: bash
+        run: |
+          if [ -z "$FRED_API_KEY" ]; then
+            echo "status=MISSING" >> "$GITHUB_OUTPUT"
+          elif ! printf '%s' "$FRED_API_KEY" | grep -Eq '^[a-z0-9]{32}$'; then
+            echo "status=INVALID" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=PASS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install point-in-time research stack
+        if: steps.secret.outputs.status == 'PASS'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install httpx
+
+      - name: Execute bounded FRED vintage sample
+        if: steps.secret.outputs.status == 'PASS'
+        id: sample
+        shell: bash
+        run: |
+          set +e
+          SERIES='${{ inputs.series_id }}'
+          if [ -z "$SERIES" ]; then SERIES='DGS10'; fi
+          OBS_DAYS='${{ inputs.observation_days }}'
+          if [ -z "$OBS_DAYS" ]; then OBS_DAYS='60'; fi
+          VINTAGE_DAYS='${{ inputs.vintage_days }}'
+          if [ -z "$VINTAGE_DAYS" ]; then VINTAGE_DAYS='30'; fi
+          case "$OBS_DAYS:$VINTAGE_DAYS" in
+            *[!0-9:]*|'') echo 'invalid numeric inputs' >&2; exit 2 ;;
+          esac
+          END=$(date -u '+%Y-%m-%dT00:00:00Z')
+          START=$(date -u -d "$END -${OBS_DAYS} days" '+%Y-%m-%dT00:00:00Z')
+          VINTAGE_END=$(date -u '+%Y-%m-%d')
+          VINTAGE_START=$(date -u -d "$VINTAGE_END -${VINTAGE_DAYS} days" '+%Y-%m-%d')
+          mkdir -p state/fred-sample reports
+          python scripts/backfill_fred_series_v05.py \
+            --series-id "$SERIES" \
+            --observation-start "$START" \
+            --observation-end "$END" \
+            --vintage-start "$VINTAGE_START" \
+            --vintage-end "$VINTAGE_END" \
+            --root state/fred-sample \
+            --output reports/fred-sample-v05.json \
+            > reports/fred-sample-v05.log 2>&1
+          STATUS=$?
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          tar -czf fred-sample-v05.tar.gz state/fred-sample reports/fred-sample-v05.* 2>/dev/null || true
+          exit 0
+
+      - name: Upload immutable FRED sample artifact
+        if: steps.secret.outputs.status == 'PASS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fred-sample-v05-${{ github.run_id }}
+          path: |
+            fred-sample-v05.tar.gz
+            reports/fred-sample-v05.json
+            reports/fred-sample-v05.log
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Open or update credential issue
+        if: steps.secret.outputs.status != 'PASS'
+        shell: bash
+        run: |
+          TITLE='[P1] Configure protected read-only FRED_API_KEY'
+          BODY=$(cat <<EOF
+          The FRED point-in-time adapter is implemented, but this run could not execute because the GitHub Actions secret status is `${{ steps.secret.outputs.status }}`.
+
+          Configure a read-only `FRED_API_KEY` repository or environment secret. Do not put the value in source, issues, logs, Drive or workflow inputs.
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p1,area:data,type:research,gate:needs-evidence'; fi
+
+      - name: Open or update FRED sample blocker
+        if: steps.secret.outputs.status == 'PASS' && steps.sample.outputs.status != '0'
+        shell: bash
+        run: |
+          TITLE='[P0] Bounded FRED vintage sample failed'
+          BODY=$(cat <<EOF
+          The protected FRED credential was present, but the bounded point-in-time sample failed.
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Inspect the retained artifact/log. Do not weaken vintage, redaction, pagination or availability semantics.
+          EOF
+          )
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$BODY"; else gh issue create --title "$TITLE" --body "$BODY" --label 'priority:p0,area:data,type:research,gate:blocked'; fi
+
+      - name: Enforce sample outcome
+        if: steps.secret.outputs.status != 'PASS' || steps.sample.outputs.status != '0'
+        run: exit 1
