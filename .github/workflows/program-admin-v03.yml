@@ -1,0 +1,66 @@
+name: program-admin-v03
+
+on:
+  push:
+    branches: [feat/xrp-engine-foundation-v0.3]
+    paths:
+      - .bootstrap/PROGRAM_ADMIN_V03
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  milestones:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create and reconcile milestones
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          repo=rotprods/XRP-inteliggence-x-
+          ensure_milestone() {
+            local title="$1" description="$2" due_on="$3"
+            local number
+            number=$(gh api --paginate "repos/$repo/milestones?state=all&per_page=100" --jq ".[] | select(.title == \"$title\") | .number" | head -n1)
+            if [[ -z "$number" ]]; then
+              number=$(gh api -X POST "repos/$repo/milestones" \
+                -f title="$title" \
+                -f description="$description" \
+                -f due_on="$due_on" \
+                --jq .number)
+            fi
+            printf '%s' "$number"
+          }
+
+          m0=$(ensure_milestone "M0 — Canonical v0.3 Alpha" "Canonical repository, clean integration PR, CI/security gates and prerelease." "2026-09-15T23:59:59Z")
+          m1=$(ensure_milestone "M1 — v0.4 Live Data Plane" "Validated read-only spot, derivatives, macro and XRPL ingestion with persistence and provider assurance." "2026-10-31T23:59:59Z")
+          m2=$(ensure_milestone "M2 — v0.5 Point-in-Time Beta" "Historical lake, leakage-safe walk-forward validation and calibrated probabilities." "2026-12-15T23:59:59Z")
+          m3=$(ensure_milestone "M3 — v0.9 Shadow RC" "Immutable shadow operation, SLO evidence and incident/restore drills." "2027-02-15T23:59:59Z")
+          m4=$(ensure_milestone "M4 — v1.0 Read-Only Production" "Production-approved read-only intelligence service; no trading/custody/signing." "2027-03-31T23:59:59Z")
+
+          assign_by_title() {
+            local search="$1" milestone="$2"
+            gh issue list --repo "$repo" --state all --search "$search in:title" --json number --jq '.[].number' \
+              | while read -r issue; do
+                  [[ -n "$issue" ]] || continue
+                  gh issue edit "$issue" --repo "$repo" --milestone "$milestone" || true
+                done
+          }
+          assign_by_title "provider assurance" "M1 — v0.4 Live Data Plane"
+          assign_by_title "point-in-time historical" "M2 — v0.5 Point-in-Time Beta"
+          assign_by_title "calibration and model governance" "M2 — v0.5 Point-in-Time Beta"
+          assign_by_title "immutable 30-day shadow" "M3 — v0.9 Shadow RC"
+          assign_by_title "SRE, security" "M4 — v1.0 Read-Only Production"
+
+          pr=$(gh pr list --repo "$repo" --head integration/xrp-engine-v0.3.0-alpha --state all --json number --jq '.[0].number // empty')
+          if [[ -n "$pr" ]]; then
+            gh issue edit "$pr" --repo "$repo" --milestone "M0 — Canonical v0.3 Alpha" || true
+          fi
+
+          if gh api "repos/$repo/contents/pyproject.toml?ref=main" >/dev/null 2>&1 \
+             && gh release view v0.3.0-alpha --repo "$repo" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$repo/milestones/$m0" -f state=closed >/dev/null
+          fi
