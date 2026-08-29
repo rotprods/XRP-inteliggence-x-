@@ -1,0 +1,81 @@
+{
+  "$id": "https://rotprods.local/schemas/provider_health.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agreement_score": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Agreement Score",
+      "type": "number"
+    },
+    "checked_at": {
+      "format": "date-time",
+      "title": "Checked At",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "freshness_score": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Freshness Score",
+      "type": "number"
+    },
+    "last_observation_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Observation At"
+    },
+    "latency_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latency Ms"
+    },
+    "provider": {
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "status": {
+      "minLength": 1,
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "checked_at",
+    "status",
+    "freshness_score",
+    "agreement_score"
+  ],
+  "title": "ProviderHealth",
+  "type": "object"
+}

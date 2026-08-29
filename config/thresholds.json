@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "freshness_seconds": {
+    "1m": 180,
+    "5m": 600,
+    "1h": 7200,
+    "1d": 172800,
+    "macro": 1209600
+  },
+  "minimum_confidence": {
+    "display_operational": 0.35,
+    "output_data_gate": 0.5,
+    "alert_operational": 0.6,
+    "production_decision": 0.75
+  },
+  "provider_consensus": {
+    "minimum_sources": 2,
+    "max_relative_spread": 0.02,
+    "outlier_relative_deviation": 0.03
+  },
+  "regime": {
+    "strong_bull": 72,
+    "bull": 58,
+    "neutral_low": 43,
+    "strong_bear": 28
+  }
+}

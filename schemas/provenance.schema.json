@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "DataFlag": {
+      "enum": [
+        "STALE",
+        "OUTLIER",
+        "CONFLICT",
+        "MISSING",
+        "SYNTHETIC",
+        "REVISED",
+        "INVALID"
+      ],
+      "title": "DataFlag",
+      "type": "string"
+    }
+  },
+  "$id": "https://rotprods.local/schemas/provenance.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "available_at": {
+      "format": "date-time",
+      "title": "Available At",
+      "type": "string"
+    },
+    "fetched_at": {
+      "format": "date-time",
+      "title": "Fetched At",
+      "type": "string"
+    },
+    "flags": {
+      "items": {
+        "$ref": "#/$defs/DataFlag"
+      },
+      "title": "Flags",
+      "type": "array"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "payload_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Payload Hash"
+    },
+    "provider": {
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "source_uri": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Uri"
+    }
+  },
+  "required": [
+    "provider",
+    "observed_at",
+    "available_at"
+  ],
+  "title": "Provenance",
+  "type": "object"
+}

@@ -1,0 +1,8 @@
+* @rotprods
+/.github/ @rotprods
+/src/xrp_regime_engine/providers/ @rotprods
+/src/xrp_regime_engine/regime.py @rotprods
+/src/xrp_regime_engine/backtest.py @rotprods
+/config/weights.json @rotprods
+/config/thresholds.json @rotprods
+/release/ @rotprods

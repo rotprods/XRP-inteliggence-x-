@@ -1,0 +1,82 @@
+{
+  "adversarial": {
+    "api_contracts": "PASS_LOCAL",
+    "ast_parse": "PASS_64_FILES",
+    "backtest_leakage": "PASS_LOCAL",
+    "provider_contracts": "PASS_LOCAL",
+    "security_contracts": "PASS_LOCAL",
+    "storage_faults": "PASS_LOCAL",
+    "temporal": "PASS_LOCAL",
+    "workflow_yaml_parse": "PASS"
+  },
+  "authority": "SHADOW_ONLY",
+  "build": {
+    "local_cli_smoke_with_host_dependencies": "PASS",
+    "local_wheel_import": "PASS",
+    "reproducible_two_builds": "PASS",
+    "sha256": "4e6a21a17d041f5f3ef21dd237c11fd268a6d77531e52c6de1c4a9e0d1851f9b",
+    "wheel": "xrp_cross_asset_regime_engine-0.2.0a2-py3-none-any.whl"
+  },
+  "cost_guardrail": {
+    "automatic_retries": false,
+    "deep_seed_replays": 3,
+    "larger_runners": false,
+    "matrix": false,
+    "paid_provider_calls": false,
+    "scheduled_workflows": false,
+    "standard_ubuntu_runner_only": true
+  },
+  "coverage": {
+    "changed_executable_line_percent": 100.0,
+    "critical_branch_percent": 100.0,
+    "critical_line_percent": 100.0,
+    "global_branch_percent": 100.0,
+    "global_line_percent": 100.0
+  },
+  "flake_gate": {
+    "failures": 0,
+    "retry_until_green": false,
+    "runs": 3,
+    "seeds": [
+      41000,
+      41001,
+      41002
+    ]
+  },
+  "hermeticity": {
+    "paid_api_calls": 0,
+    "proxy_environment_scrubbed": true,
+    "secrets_scrubbed": true,
+    "unexpected_test_network_calls": 0
+  },
+  "local_implementation_sha": "7b60d76c9c96a6a19381d40f47f5ebd4ea00b16d",
+  "package_version": "0.2.0a2",
+  "pending_clean_runner_gates": [
+    "Hypothesis property generation",
+    "Ruff lint",
+    "Ruff format",
+    "strict mypy",
+    "Bandit",
+    "diff-cover cross-check",
+    "pip-audit",
+    "CycloneDX SBOM",
+    "Python 3.11",
+    "Python 3.12",
+    "mutation score >=90%",
+    "clean dependency-resolving wheel install"
+  ],
+  "phase": "Q1_VERIFICATION_OS_LOCAL_GATE",
+  "probability_calibrated": false,
+  "production_ready": false,
+  "python_runtime": "3.13.5",
+  "status": "PASS_LOCAL_WITH_CLEAN_RUNNER_GATES_PENDING",
+  "tests": {
+    "errors": 0,
+    "failed": 0,
+    "hypothesis_executed": false,
+    "hypothesis_reason": "dependency unavailable in offline recovery runtime",
+    "passed": 238,
+    "skipped": 1
+  },
+  "version": "0.2.0-alpha.2"
+}
