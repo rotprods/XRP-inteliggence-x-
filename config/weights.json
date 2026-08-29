@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "data_quality_role": "gate_only_not_directional",
+  "horizons": {
+    "1h": {
+      "macro": 0.1,
+      "crypto": 0.3,
+      "xrp_relative": 0.3,
+      "derivatives": 0.25,
+      "xrpl": 0.05
+    },
+    "4h": {
+      "macro": 0.15,
+      "crypto": 0.3,
+      "xrp_relative": 0.3,
+      "derivatives": 0.2,
+      "xrpl": 0.05
+    },
+    "1d": {
+      "macro": 0.25,
+      "crypto": 0.3,
+      "xrp_relative": 0.3,
+      "derivatives": 0.1,
+      "xrpl": 0.05
+    },
+    "1w": {
+      "macro": 0.35,
+      "crypto": 0.3,
+      "xrp_relative": 0.25,
+      "derivatives": 0.05,
+      "xrpl": 0.05
+    }
+  },
+  "feature_directions": {
+    "xrp_return_7d": 1,
+    "xrp_btc_return_7d": 1,
+    "btc_return_7d": 1,
+    "eth_btc_return_7d": 1,
+    "ndx_return_20d": 1,
+    "dxy_return_20d": -1,
+    "us10y_change_20d": -1,
+    "vix_z_20d": -1,
+    "funding_z": -0.4,
+    "oi_price_divergence": -0.5
+  }
+}

@@ -1,0 +1,110 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xrp-cross-asset-regime-engine"
+version = "0.2.0a2"
+description = "Read-only, provenance-aware cross-asset regime intelligence for XRP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "httpx>=0.27",
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "pydantic>=2.6",
+  "typer>=0.12",
+  "uvicorn>=0.29"
+]
+
+[project.optional-dependencies]
+dev = [
+  "bandit[toml]>=1.7",
+  "mypy>=1.10",
+  "pandas-stubs>=2.2",
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=5",
+  "pytest-timeout>=2.3",
+  "hypothesis>=6.112",
+  "build>=1.2",
+  "ruff>=0.5"
+]
+deep = [
+  "diff-cover>=9.2",
+  "mutmut>=3.7,<4",
+  "pip-audit>=2.7",
+  "cyclonedx-bom>=4.5",
+  "twine>=5.1"
+]
+
+[project.scripts]
+xrp-regime = "xrp_regime_engine.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+markers = [
+  "unit: isolated deterministic behavior",
+  "property: generated invariant/property test",
+  "contract: provider/data/API contract test",
+  "integration: multi-component hermetic test",
+  "temporal: timestamp/cadence/revision correctness",
+  "storage: persistence and fault-injection",
+  "security: adversarial security boundary",
+  "api: HTTP/API contract",
+  "research: backtest and leakage integrity",
+  "packaging: build/install/reproducibility",
+  "slow: deterministic expensive suite",
+  "live: real provider/network test; manual only",
+  "allow_network: requires explicit --allow-network",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+plugins = []
+
+[[tool.mypy.overrides]]
+module = ["numpy.*", "pandas.*"]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = true
+source = ["xrp_regime_engine"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 92
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+
+
+[tool.mutmut]
+source_paths = [
+  "src/xrp_regime_engine/models.py",
+  "src/xrp_regime_engine/consensus.py",
+  "src/xrp_regime_engine/features.py",
+  "src/xrp_regime_engine/regime.py",
+  "src/xrp_regime_engine/backtest.py",
+  "src/xrp_regime_engine/storage.py",
+  "src/xrp_regime_engine/providers/base.py",
+]
+pytest_add_cli_args_test_selection = ["tests/"]

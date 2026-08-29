@@ -1,0 +1,125 @@
+{
+  "version": 2,
+  "assets": {
+    "XRP_USD": {
+      "category": "crypto",
+      "symbols": {
+        "coinbase": "XRP-USD",
+        "kraken": "XRPUSD"
+      },
+      "quote_currency": "USD",
+      "stablecoin_proxy": false
+    },
+    "XRP_USDT": {
+      "category": "crypto",
+      "quote_currency": "USDT",
+      "stablecoin_proxy": true,
+      "symbols": {
+        "binance": "XRPUSDT",
+        "kucoin": "XRP-USDT"
+      }
+    },
+    "BTC_USD": {
+      "category": "crypto",
+      "symbols": {
+        "coinbase": "BTC-USD",
+        "kraken": "XBTUSD"
+      },
+      "quote_currency": "USD",
+      "stablecoin_proxy": false
+    },
+    "BTC_USDT": {
+      "category": "crypto",
+      "quote_currency": "USDT",
+      "stablecoin_proxy": true,
+      "symbols": {
+        "binance": "BTCUSDT",
+        "kucoin": "BTC-USDT"
+      }
+    },
+    "ETH_USD": {
+      "category": "crypto",
+      "symbols": {
+        "coinbase": "ETH-USD",
+        "kraken": "ETHUSD"
+      },
+      "quote_currency": "USD",
+      "stablecoin_proxy": false
+    },
+    "ETH_USDT": {
+      "category": "crypto",
+      "quote_currency": "USDT",
+      "stablecoin_proxy": true,
+      "symbols": {
+        "binance": "ETHUSDT",
+        "kucoin": "ETH-USDT"
+      }
+    },
+    "XRP_BTC": {
+      "category": "relative",
+      "derived_from": [
+        "XRP_USD",
+        "BTC_USD"
+      ]
+    },
+    "ETH_BTC": {
+      "category": "relative",
+      "derived_from": [
+        "ETH_USD",
+        "BTC_USD"
+      ]
+    },
+    "BTC_DOMINANCE": {
+      "category": "crypto_breadth"
+    },
+    "SPX": {
+      "category": "equity_index"
+    },
+    "NDX": {
+      "category": "equity_index"
+    },
+    "VIX": {
+      "category": "volatility"
+    },
+    "DXY": {
+      "category": "fx"
+    },
+    "US2Y": {
+      "category": "rates"
+    },
+    "US10Y": {
+      "category": "rates"
+    },
+    "US30Y": {
+      "category": "rates"
+    },
+    "REAL10Y": {
+      "category": "real_rates"
+    },
+    "GOLD": {
+      "category": "commodity"
+    },
+    "WTI": {
+      "category": "energy"
+    },
+    "BRENT": {
+      "category": "energy"
+    },
+    "GASOLINE": {
+      "category": "energy"
+    },
+    "NATGAS": {
+      "category": "energy"
+    },
+    "COCOA": {
+      "category": "exploratory",
+      "default_weight": 0.0
+    },
+    "COIN": {
+      "category": "crypto_equity"
+    },
+    "MSTR": {
+      "category": "crypto_equity"
+    }
+  }
+}

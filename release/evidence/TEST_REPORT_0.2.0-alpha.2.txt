@@ -1,0 +1,32 @@
+XRP Cross-Asset Regime Engine — Q1 local verification report
+Version: 0.2.0-alpha.2 / package 0.2.0a2
+Date: 2026-08-28
+Runtime: Python 3.13.5
+
+Verified locally:
+- pytest: 238 PASS, 1 SKIP (Hypothesis unavailable offline), 0 FAIL, 0 ERROR
+- global line coverage: 100.00%
+- global branch coverage: 100.00%
+- critical module line/branch coverage: 100.00% / 100.00%
+- changed executable line coverage: 100.00% (982/982)
+- flake/seed replay: 3/3 PASS (41000, 41001, 41002)
+- compile/AST: PASS
+- YAML parse: PASS
+- unexpected test network calls: 0 by hermetic harness
+- paid provider calls: 0
+- reproducible wheel: PASS (two identical builds)
+- wheel SHA-256: 4e6a21a17d041f5f3ef21dd237c11fd268a6d77531e52c6de1c4a9e0d1851f9b
+- wheel import + CLI smoke using host dependency set: PASS
+
+Not executed locally and not claimed as PASS:
+- Hypothesis generated property corpus
+- Ruff / Ruff format
+- strict mypy
+- Bandit
+- diff-cover independent cross-check
+- pip-audit / CycloneDX SBOM
+- Python 3.11 / 3.12
+- mutation testing
+- clean dependency-resolving wheel install
+
+Production remains BLOCKED.

@@ -1,0 +1,94 @@
+{
+  "version": 2,
+  "providers": [
+    {
+      "id": "binance_spot",
+      "class": "BinanceSpotProvider",
+      "priority": 1,
+      "key_required": false,
+      "base_url_env": "BINANCE_BASE_URL",
+      "data": [
+        "candles",
+        "ticker"
+      ],
+      "quote_semantics": "USDT only; never labelled USD"
+    },
+    {
+      "id": "kucoin_spot",
+      "class": "KuCoinSpotProvider",
+      "priority": 2,
+      "key_required": false,
+      "base_url_env": "KUCOIN_BASE_URL",
+      "data": [
+        "candles",
+        "ticker"
+      ],
+      "quote_semantics": "USDT only; never labelled USD"
+    },
+    {
+      "id": "coinbase_exchange",
+      "class": "CoinbaseExchangeProvider",
+      "priority": 2,
+      "key_required": false,
+      "base_url_env": "COINBASE_BASE_URL",
+      "data": [
+        "candles",
+        "ticker"
+      ],
+      "quote_semantics": "USD"
+    },
+    {
+      "id": "kraken_spot",
+      "class": "KrakenSpotProvider",
+      "priority": 3,
+      "key_required": false,
+      "base_url_env": "KRAKEN_BASE_URL",
+      "data": [
+        "candles",
+        "ticker"
+      ],
+      "quote_semantics": "USD"
+    },
+    {
+      "id": "fred",
+      "class": "FredProvider",
+      "priority": 1,
+      "key_required": true,
+      "key_env": "FRED_API_KEY",
+      "data": [
+        "macro_series",
+        "vintages"
+      ]
+    },
+    {
+      "id": "xrpl",
+      "class": "XRPLProvider",
+      "priority": 1,
+      "key_required": false,
+      "base_url_env": "XRPL_JSON_RPC_URL",
+      "data": [
+        "server_info",
+        "ledger"
+      ]
+    },
+    {
+      "id": "csv",
+      "class": "CSVProvider",
+      "priority": 99,
+      "key_required": false,
+      "data": [
+        "manual",
+        "licensed_exports"
+      ]
+    },
+    {
+      "id": "demo",
+      "class": "DemoProvider",
+      "priority": 100,
+      "key_required": false,
+      "data": [
+        "synthetic_test_only"
+      ]
+    }
+  ]
+}

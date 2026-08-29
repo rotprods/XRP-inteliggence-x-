@@ -1,0 +1,55 @@
+{
+  "branch_protection_active": false,
+  "ci_cost_controls": {
+    "deep_seed_replays": 3,
+    "no_auto_retry": true,
+    "no_matrix": true,
+    "no_paid_providers": true,
+    "no_schedule": true,
+    "one_workflow_file": true,
+    "standard_runner_only": true
+  },
+  "clean_q1_pr_created": false,
+  "gate": "Q1_VERIFICATION_OS",
+  "local": {
+    "changed_line_coverage_percent": 100.0,
+    "critical_branch_coverage_percent": 100.0,
+    "flake_gate": "PASS_3_OF_3",
+    "global_branch_coverage_percent": 100.0,
+    "global_line_coverage_percent": 100.0,
+    "paid_api_calls": 0,
+    "pytest": "PASS_238_PLUS_1_CONTROLLED_SKIP",
+    "unexpected_network_calls": 0,
+    "wheel_reproducible": true,
+    "wheel_sha256": "4e6a21a17d041f5f3ef21dd237c11fd268a6d77531e52c6de1c4a9e0d1851f9b"
+  },
+  "local_implementation_sha": "7b60d76c9c96a6a19381d40f47f5ebd4ea00b16d",
+  "pending_engineering_gates": [
+    "clean-runner Hypothesis",
+    "Ruff",
+    "format",
+    "mypy strict",
+    "Bandit",
+    "diff-cover",
+    "pip-audit",
+    "SBOM",
+    "Python 3.11/3.12/3.13",
+    "mutation score >=90%",
+    "remote tree/hash reconciliation",
+    "branch protection"
+  ],
+  "probability_calibrated": false,
+  "production": false,
+  "remote_main_sha": "05cf97517bee99f70b4216ff8823c237a9d5c6bf",
+  "separate_production_blockers": [
+    "regional live-provider validation",
+    "data-source licence signoff",
+    "point-in-time historical backfill",
+    "walk-forward probability calibration",
+    "30 chronological shadow days",
+    "SLO and restore drills",
+    "independent release review"
+  ],
+  "status": "LOCAL_GATE_PASS_REMOTE_GATE_PENDING",
+  "version": "0.2.0-alpha.2"
+}
