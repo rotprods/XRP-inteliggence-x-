@@ -3,7 +3,14 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from .models import ClaimRecord, EdgeRecord, EntityRecord, EpistemicStatus, GraphDocument, SourceTier
+from .models import (
+    ClaimRecord,
+    EdgeRecord,
+    EntityRecord,
+    EpistemicStatus,
+    GraphDocument,
+    SourceTier,
+)
 
 
 @dataclass
@@ -48,7 +55,12 @@ class ClaimLedger:
             left.status = EpistemicStatus.DISPUTED
             right.status = EpistemicStatus.DISPUTED
 
-    def promote(self, claim_id: str, target: EpistemicStatus, source_tiers: set[SourceTier]) -> ClaimRecord:
+    def promote(
+        self,
+        claim_id: str,
+        target: EpistemicStatus,
+        source_tiers: set[SourceTier],
+    ) -> ClaimRecord:
         claim = self.claims[claim_id]
         if target == EpistemicStatus.FACT:
             primary = {SourceTier.T0_PRIMARY_MACHINE, SourceTier.T1_PRIMARY_DOCUMENT}

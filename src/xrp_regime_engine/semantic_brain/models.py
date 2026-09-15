@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
 from typing import Any
@@ -85,7 +85,7 @@ class RelationType(StrEnum):
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class TemporalEnvelope(BaseModel):
@@ -96,7 +96,7 @@ class TemporalEnvelope(BaseModel):
     retrieved_at: datetime = Field(default_factory=utc_now)
 
     @model_validator(mode="after")
-    def availability_is_not_after_retrieval(self) -> "TemporalEnvelope":
+    def availability_is_not_after_retrieval(self) -> TemporalEnvelope:
         if self.available_at and self.available_at > self.retrieved_at:
             raise ValueError("available_at cannot be later than retrieved_at")
         return self
@@ -134,7 +134,7 @@ class ClaimRecord(BaseModel):
     quality_flags: set[str] = Field(default_factory=set)
 
     @classmethod
-    def from_statement(cls, statement: str, **kwargs: Any) -> "ClaimRecord":
+    def from_statement(cls, statement: str, **kwargs: Any) -> ClaimRecord:
         normalized = " ".join(statement.casefold().split())
         digest = sha256(normalized.encode()).hexdigest()
         return cls(claim_id=f"claim:sha256:{digest}", statement=statement, **kwargs)

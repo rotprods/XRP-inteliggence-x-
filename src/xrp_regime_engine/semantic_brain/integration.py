@@ -1,39 +1,56 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
-
-from pydantic import BaseModel, Field
 
 from .models import EpistemicStatus
 
 
-class SemanticEvidence(BaseModel):
+@dataclass(frozen=True)
+class SemanticEvidence:
     claim_id: str
     statement: str
     status: EpistemicStatus
-    evidence_confidence: float = Field(ge=0.0, le=1.0)
-    available_at: datetime | None
-    source_ids: list[str]
-    quality_flags: list[str] = Field(default_factory=list)
+    evidence_confidence: float
+    source_ids: tuple[str, ...]
+    quality_flags: tuple[str, ...]
 
 
-class RegimeSemanticContext(BaseModel):
+@dataclass(frozen=True)
+class RegimeSemanticContext:
     decision_at: datetime
-    evidence: list[SemanticEvidence]
+    evidence: tuple[SemanticEvidence, ...]
     narrative_execution_weight: float = 0.0
-    semantic_directional_weight: float = 0.0
 
 
-def build_regime_context(records: list[dict[str, Any]], decision_at: datetime) -> RegimeSemanticContext:
+def build_regime_context(
+    records: list[dict[str, Any]], decision_at: datetime
+) -> RegimeSemanticContext:
     if decision_at.tzinfo is None:
-        decision_at = decision_at.replace(tzinfo=timezone.utc)
+        decision_at = decision_at.replace(tzinfo=UTC)
     evidence: list[SemanticEvidence] = []
     for raw in records:
-        item = SemanticEvidence.model_validate(raw)
-        if item.available_at is None or item.available_at > decision_at:
+        available_at = raw.get("available_at")
+        if isinstance(available_at, datetime) and available_at > decision_at:
             continue
-        if item.status in {EpistemicStatus.CLAIM_ONLY, EpistemicStatus.DISPUTED, EpistemicStatus.REFUTED, EpistemicStatus.NO_DATA}:
-            item.quality_flags.append("NON_DIRECTIONAL_RESEARCH_ONLY")
-        evidence.append(item)
-    return RegimeSemanticContext(decision_at=decision_at, evidence=evidence)
+        status = EpistemicStatus(raw.get("status", EpistemicStatus.NO_DATA))
+        flags = set(raw.get("quality_flags", []))
+        if status in {
+            EpistemicStatus.CLAIM_ONLY,
+            EpistemicStatus.DISPUTED,
+            EpistemicStatus.REFUTED,
+            EpistemicStatus.NO_DATA,
+        }:
+            flags.add("NON_DIRECTIONAL_RESEARCH_ONLY")
+        evidence.append(
+            SemanticEvidence(
+                claim_id=str(raw["claim_id"]),
+                statement=str(raw["statement"]),
+                status=status,
+                evidence_confidence=float(raw.get("evidence_confidence", 0.0)),
+                source_ids=tuple(sorted(str(item) for item in raw.get("source_ids", []))),
+                quality_flags=tuple(sorted(flags)),
+            )
+        )
+    return RegimeSemanticContext(decision_at=decision_at, evidence=tuple(evidence))
