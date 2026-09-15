@@ -1,0 +1,58 @@
+schema_version: xrp-knowledge-manifest-v1
+created_at: 2026-09-15T07:15:00Z
+authority: RESEARCH_DERIVED
+runtime_authority: SHADOW_ONLY
+execution_authorized: false
+qdrant:
+  collection: xrp_semantic_brain_v1
+  authority: DERIVED_RECONSTRUCTIBLE_ONLY
+  vectors:
+    semantic: 1024
+    cos20: 20
+corpus_domains:
+  - ripple_xrp_xrpl_rlusd
+  - swift_correspondent_banking_tokenized_deposits
+  - stablecoins_cbdc_programmable_money
+  - regulation_clarity_sec_courts
+  - fed_treasury_yields_dxy_liquidity
+  - boj_yen_carry_trade
+  - oil_hormuz_bab_el_mandeb_geopolitics
+  - cross_asset_btc_eth_equities_vix_gold_energy
+  - bank_of_england_rtgs_dlt_experiments
+  - agentic_economy_machine_payments
+  - institutional_networks_documented_influence
+  - xrp_social_narratives_riddles_predictions
+source_tiers:
+  T0_PRIMARY_MACHINE: official API, ledger, court/legislative machine record
+  T1_PRIMARY_DOCUMENT: official regulator, central bank, institution, network or company publication
+  T2_HIGH_QUALITY_SECONDARY: reputable reporting/research
+  T3_SECONDARY: commentary requiring corroboration
+  T4_SOCIAL_CLAIM: social/riddle/unverified assertion
+epistemic_statuses:
+  - FACT
+  - STRONG_EVIDENCE
+  - PLAUSIBLE
+  - HYPOTHESIS
+  - CLAIM_ONLY
+  - DISPUTED
+  - REFUTED
+  - NO_DATA
+hard_gates:
+  - no_auto_trading
+  - no_wallet_or_custody
+  - no_embedding_truth_promotion
+  - preserve_available_at
+  - provider_provenance_required
+  - independent_provider_consensus_for_critical_market_truth
+  - narrative_zero_execution_weight_until_leakage_safe_validation
+  - production_status_remains_BLOCKED
+reconstruction:
+  canonical_inputs:
+    - versioned research/source manifests
+    - canonical claim/entity/edge records
+    - structured point-in-time market evidence
+  derived_outputs:
+    - Qdrant vectors
+    - COS20 projections
+    - semantic chunks
+    - graph indexes

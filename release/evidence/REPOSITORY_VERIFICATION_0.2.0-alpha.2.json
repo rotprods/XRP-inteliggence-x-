@@ -1,0 +1,17 @@
+{
+  "cost_guardrail": {
+    "matrix_fanout": false,
+    "paid_live_provider_calls": false,
+    "scheduled_runs": false,
+    "standard_runner_only": true,
+    "workflow_count": 1
+  },
+  "errors": [],
+  "manifest_ok": true,
+  "read_only_boundary": true,
+  "status": "PASS",
+  "verification_scope": "git_visible",
+  "verified_at": "2026-08-28",
+  "version": "0.2.0-alpha.2",
+  "workflow_count": 1
+}

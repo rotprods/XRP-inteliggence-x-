@@ -1,0 +1,63 @@
+{
+  "schema_version": "xrp-semanticbrain-v1",
+  "authority": "DERIVED_RECONSTRUCTIBLE_ONLY",
+  "collections": {
+    "xrp_semantic_brain_v1": {
+      "vectors": {
+        "semantic": {"size": 1024, "distance": "Cosine", "model": "Qwen3-Embedding-0.6B-or-compatible-versioned"},
+        "cos20": {"size": 20, "distance": "Cosine", "model": "COS20D-v1"}
+      },
+      "sparse_vector": "bm25_or_qdrant_sparse_versioned",
+      "point_kinds": ["document", "claim", "entity", "edge", "event", "semantic_market_state"],
+      "payload_required": [
+        "point_id", "kind", "canonical_text", "epistemic_status", "source_ids",
+        "source_tier", "retrieved_at", "embedding_version", "cos20_version"
+      ],
+      "payload_optional": [
+        "document_id", "claim_id", "entity_ids", "edge_ids", "canonical_url", "provider",
+        "source_type", "content_sha256", "event_at", "observed_at", "published_at", "available_at",
+        "valid_from", "valid_to", "jurisdiction", "market_symbols", "market_horizons",
+        "geographies", "chokepoints", "evidence_confidence", "directional_conviction",
+        "contradicts", "supports", "quality_flags", "repo_commit", "raw_evidence_pointer"
+      ]
+    }
+  },
+  "namespace_policy": {
+    "verified_evidence": ["FACT", "STRONG_EVIDENCE"],
+    "research": ["PLAUSIBLE", "HYPOTHESIS"],
+    "narrative_quarantine": ["CLAIM_ONLY", "DISPUTED", "REFUTED", "NO_DATA"]
+  },
+  "retrieval": {
+    "mode": "hybrid_dense_sparse_plus_payload_plus_graph",
+    "must_filter_temporal_queries_by_available_at": true,
+    "must_return_provenance": true,
+    "live_truth_requires_fresh_structured_source": true,
+    "embedding_similarity_can_promote_truth": false
+  },
+  "example_point": {
+    "id": "claim:swift:tokenized-deposits:2026-07",
+    "vectors": {"semantic": "<1024 floats>", "cos20": "<20 floats>"},
+    "sparse_vector": "<sparse>",
+    "payload": {
+      "point_id": "claim:swift:tokenized-deposits:2026-07",
+      "kind": "claim",
+      "canonical_text": "SWIFT announced a pilot involving tokenized-deposit cross-border payment infrastructure with participating banks.",
+      "epistemic_status": "FACT",
+      "source_ids": ["source:swift:official"],
+      "source_tier": "T1_PRIMARY_DOCUMENT",
+      "retrieved_at": "2026-09-15T00:00:00Z",
+      "embedding_version": "qwen3-embedding-0.6b@pinned",
+      "cos20_version": "COS20D-v1",
+      "entity_ids": ["org:swift"],
+      "market_symbols": ["XRP"],
+      "quality_flags": ["DOES_NOT_IMPLY_XRP_ADOPTION"]
+    }
+  },
+  "example_queries": [
+    {"question": "What evidence connects SWIFT with XRP?", "policy": "retrieve SWIFT and XRP neighborhoods; require an explicit typed edge; return NO_DIRECT_EVIDENCE if only sector-level DLT similarity exists"},
+    {"question": "Which events preceded major XRP moves?", "policy": "join semantic events to point-in-time structured returns; enforce available_at <= decision_at"},
+    {"question": "Which Mr Pool claims were falsifiable ex ante?", "policy": "filter kind=claim, source_tier=T4_SOCIAL_CLAIM, quality_flags excludes NON_FALSIFIABLE, require frozen target+horizon"},
+    {"question": "How can BOJ carry-trade stress connect to XRP?", "policy": "traverse causal-hypothesis edges BOJ->JPY/carry->global liquidity->BTC/high-beta crypto->XRP; distinguish mechanism from observed causal proof"},
+    {"question": "What contradicts XRP as universal bridge?", "policy": "retrieve CONTRADICTS/COMPETES_WITH edges and alternative rails such as tokenized deposits, stablecoins and other DLT/payment networks"}
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "changed_line_coverage": 100.0,
+  "cost_guardrail": {
+    "automatic_retries": false,
+    "larger_runners": false,
+    "paid_provider_calls": false,
+    "scheduled_workflows": false,
+    "standard_runner_only": true
+  },
+  "coverage": {
+    "critical_modules": {
+      "src/xrp_regime_engine/api.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/backtest.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/consensus.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/features.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/models.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/providers/base.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/providers/binance.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/providers/coinbase.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/providers/fred.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/providers/kraken.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/providers/kucoin.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/providers/xrpl.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/regime.py": {
+        "branch": 100.0,
+        "line": 100.0
+      },
+      "src/xrp_regime_engine/storage.py": {
+        "branch": 100.0,
+        "line": 100.0
+      }
+    },
+    "failures": [],
+    "global": {
+      "branch": 100.0,
+      "line": 100.0
+    },
+    "status": "PASS",
+    "thresholds": {
+      "critical_branch": 95.0,
+      "critical_line": 98.0,
+      "global_branch": 92.0,
+      "global_line": 95.0
+    }
+  },
+  "evidence_scope": "local_offline_runtime",
+  "flake_gate": {
+    "attempts": [
+      {
+        "returncode": 0,
+        "seconds": 7.35,
+        "seed": 41000
+      },
+      {
+        "returncode": 0,
+        "seconds": 6.936,
+        "seed": 41001
+      },
+      {
+        "returncode": 0,
+        "seconds": 7.094,
+        "seed": 41002
+      }
+    ],
+    "executed_runs": 3,
+    "failing_seeds": [],
+    "requested_runs": 3,
+    "retry_until_green": false,
+    "seconds": 21.38,
+    "selection": "not live and not slow",
+    "status": "PASS"
+  },
+  "mutation": null,
+  "note": "Hypothesis/Ruff/mypy/Bandit/audit/SBOM/mutation/multi-Python remain clean-runner gates and are not represented as PASS.",
+  "paid_api_calls": 0,
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+  "probability_calibrated": false,
+  "production_ready": false,
+  "pytest": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 1,
+    "tests": 239
+  },
+  "python_runtime": "3.13.5",
+  "remote_static_gates_executed": false,
+  "runner_minutes": null,
+  "schema_version": 2,
+  "unexpected_network_calls": 0,
+  "validated_python_versions": [
+    "3.13.5"
+  ],
+  "wheel_sha256": "4e6a21a17d041f5f3ef21dd237c11fd268a6d77531e52c6de1c4a9e0d1851f9b"
+}
