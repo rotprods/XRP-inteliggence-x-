@@ -125,6 +125,54 @@ def test_window_aggregates_cvd_and_derivatives_deltas() -> None:
     assert window.open_interest_delta_pct == pytest.approx(0.10)
     assert window.funding_delta_bps == pytest.approx(1.0)
     assert window.basis_delta_bps == pytest.approx(3.0)
+    assert window.last_sample_age_seconds == pytest.approx(20)
+    assert window.freshness_limit_seconds == 60
+    assert window.ingestion_lag_seconds == pytest.approx(0)
+    assert window.ingestion_lag_limit_seconds == 15
+    assert window.regime_eligible is True
+    assert window.execution_weight == 0.0
+
+
+def test_stale_window_is_ineligible_for_regime_use() -> None:
+    prediction_time = T0 + timedelta(minutes=1)
+    window = build_temporal_window(
+        (
+            sample(5, mid=1.40, depth=0.1, buys=50, sells=50),
+            sample(40, mid=1.41, depth=0.2, buys=60, sells=40),
+        ),
+        prediction_time=prediction_time,
+        window_seconds=60,
+    )
+    assert window is not None
+    assert window.last_sample_age_seconds == pytest.approx(20)
+    assert "STALE_WINDOW" in window.quality_flags
+    assert window.regime_eligible is False
+    assert window.execution_weight == 0.0
+
+
+def test_ingestion_lag_is_ineligible_even_when_observation_is_fresh() -> None:
+    prediction_time = T0 + timedelta(minutes=1)
+    window = build_temporal_window(
+        (
+            sample(5, mid=1.40, depth=0.1, buys=50, sells=50),
+            sample(
+                52,
+                mid=1.41,
+                depth=0.2,
+                buys=60,
+                sells=40,
+                fetch_delay_after_available=7,
+            ),
+        ),
+        prediction_time=prediction_time,
+        window_seconds=60,
+    )
+    assert window is not None
+    assert window.last_sample_age_seconds == pytest.approx(8)
+    assert "STALE_WINDOW" not in window.quality_flags
+    assert window.ingestion_lag_seconds == pytest.approx(7)
+    assert "INGESTION_LAG" in window.quality_flags
+    assert window.regime_eligible is False
     assert window.execution_weight == 0.0
 
 
@@ -145,6 +193,7 @@ def test_missing_derivatives_remain_null_and_are_flagged() -> None:
     assert "OPEN_INTEREST_NO_DATA" in window.quality_flags
     assert "FUNDING_NO_DATA" in window.quality_flags
     assert "BASIS_NO_DATA" in window.quality_flags
+    assert window.regime_eligible is True
 
 
 def test_naive_timestamp_is_rejected() -> None:
