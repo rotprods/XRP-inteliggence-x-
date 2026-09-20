@@ -18,14 +18,16 @@ def sample(
     funding: float | None = None,
     basis: float | None = None,
     availability_delay: int = 0,
+    fetch_delay_after_available: int = 0,
 ) -> TemporalFlowSample:
     observed = T0 + timedelta(seconds=seconds)
     available = observed + timedelta(seconds=availability_delay)
+    fetched = available + timedelta(seconds=fetch_delay_after_available)
     return TemporalFlowSample(
         symbol="XRPUSDT",
         observed_at=observed,
         available_at=available,
-        fetched_at=available,
+        fetched_at=fetched,
         mid_price=mid,
         depth_imbalance_25bps=depth,
         aggressive_buy_notional=buys,
@@ -59,6 +61,30 @@ def test_future_available_sample_is_excluded_from_point_in_time_window() -> None
     assert window.mid_return_bps == pytest.approx(0)
     assert window.aggressive_buy_notional == pytest.approx(100)
     assert "SPARSE_WINDOW" in window.quality_flags
+
+
+def test_future_fetched_sample_is_excluded_from_point_in_time_window() -> None:
+    prediction_time = T0 + timedelta(minutes=1)
+    samples = (
+        sample(10, mid=1.40, depth=0.2, buys=100, sells=50),
+        sample(
+            20,
+            mid=1.50,
+            depth=0.8,
+            buys=10_000,
+            sells=0,
+            fetch_delay_after_available=50,
+        ),
+    )
+    window = build_temporal_window(
+        samples,
+        prediction_time=prediction_time,
+        window_seconds=60,
+    )
+    assert window is not None
+    assert window.sample_count == 1
+    assert window.mid_return_bps == pytest.approx(0)
+    assert window.aggressive_buy_notional == pytest.approx(100)
 
 
 def test_window_aggregates_cvd_and_derivatives_deltas() -> None:
