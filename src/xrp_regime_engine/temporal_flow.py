@@ -11,6 +11,12 @@ FRESHNESS_LIMIT_SECONDS = {
     900: 180,
     3600: 600,
 }
+INGESTION_LAG_LIMIT_SECONDS = {
+    60: 5,
+    300: 15,
+    900: 30,
+    3600: 60,
+}
 
 
 def _require_aware(value: datetime, field: str) -> None:
@@ -91,6 +97,8 @@ class TemporalFlowWindow:
     basis_delta_bps: float | None
     last_sample_age_seconds: float
     freshness_limit_seconds: int
+    ingestion_lag_seconds: float
+    ingestion_lag_limit_seconds: int
     regime_eligible: bool
     quality_flags: tuple[str, ...]
     execution_weight: float = 0.0
@@ -164,8 +172,9 @@ def build_temporal_window(
     if last_sample_age > freshness_limit:
         flags.append("STALE_WINDOW")
 
+    ingestion_lag_limit = INGESTION_LAG_LIMIT_SECONDS[window_seconds]
     ingestion_lag = (last.fetched_at - last.observed_at).total_seconds()
-    if ingestion_lag > freshness_limit:
+    if ingestion_lag > ingestion_lag_limit:
         flags.append("INGESTION_LAG")
 
     regime_eligible = not any(flag in {"STALE_WINDOW", "INGESTION_LAG"} for flag in flags)
@@ -193,6 +202,8 @@ def build_temporal_window(
         basis_delta_bps=None if basis_pair is None else basis_pair[1] - basis_pair[0],
         last_sample_age_seconds=last_sample_age,
         freshness_limit_seconds=freshness_limit,
+        ingestion_lag_seconds=ingestion_lag,
+        ingestion_lag_limit_seconds=ingestion_lag_limit,
         regime_eligible=regime_eligible,
         quality_flags=tuple(flags),
         execution_weight=0.0,
