@@ -8,7 +8,6 @@ from fastapi import FastAPI, HTTPException
 from xrp_regime_engine.storage import SQLiteStore
 from xrp_regime_engine.version import __version__
 
-
 DB_PATH = Path(os.getenv("XRP_ENGINE_DB_PATH", "state/demo/engine.sqlite3"))
 SUPPORTED_HORIZONS = frozenset({"1h", "4h", "1d", "1w"})
 app = FastAPI(title="XRP Cross-Asset Regime Engine", version=__version__)

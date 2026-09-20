@@ -6,7 +6,6 @@ import re
 import subprocess
 from pathlib import Path
 
-
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 

@@ -9,7 +9,6 @@ from pathlib import Path
 
 from build_manifest import render_manifest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_SOURCE_TOKENS = {
     "execute_trade",
@@ -93,7 +92,6 @@ def verify(root: Path = ROOT) -> dict[str, object]:
             continue
         relative = path.relative_to(root)
         if any(part in GENERATED_PARTS for part in relative.parts):
-            # Generated/ignored runtime state may exist locally, but it may not be Git-visible.
             visible = _git_visible_paths(root)
             if visible is not None and path in visible:
                 errors.append(f"generated artifact tracked or unignored in source tree: {relative}")
