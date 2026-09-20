@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 
 import httpx
 import pytest
@@ -139,7 +138,9 @@ async def test_transport_errors_do_not_leak_query_secrets() -> None:
 async def test_method_and_path_cannot_escape_policy() -> None:
     provider = StubProvider(
         "https://api.test.invalid",
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={})
+        ),
     )
     try:
         with pytest.raises(ProviderError, match="not allowed"):
@@ -148,6 +149,7 @@ async def test_method_and_path_cannot_escape_policy() -> None:
             await provider._request_json("GET", "https://evil.invalid/data")
     finally:
         await provider.aclose()
+
 
 @pytest.mark.asyncio
 async def test_health_reports_ok_and_down_without_raising() -> None:

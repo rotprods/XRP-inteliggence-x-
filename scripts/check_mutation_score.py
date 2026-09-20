@@ -18,10 +18,7 @@ def main() -> None:
     args = parser.parse_args()
 
     root = ET.parse(args.junit_xml).getroot()
-    if root.tag == "testsuite":
-        suites = [root]
-    else:
-        suites = root.findall(".//testsuite")
+    suites = [root] if root.tag == "testsuite" else root.findall(".//testsuite")
     if not suites:
         raise SystemExit("mutmut JUnit XML contains no testsuite")
 

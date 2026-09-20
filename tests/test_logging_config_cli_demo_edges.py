@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -21,7 +21,15 @@ def test_json_formatter_includes_redacted_exception() -> None:
     try:
         raise RuntimeError("token=SUPERSECRET")
     except RuntimeError:
-        record = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom", (), __import__("sys").exc_info())
+        record = logging.LogRecord(
+            "x",
+            logging.ERROR,
+            __file__,
+            1,
+            "boom",
+            (),
+            __import__("sys").exc_info(),
+        )
     payload = json.loads(formatter.format(record))
     assert payload["level"] == "ERROR"
     assert "SUPERSECRET" not in payload["exception"]
@@ -67,7 +75,10 @@ def test_demo_rejects_too_short_and_naive_end() -> None:
         generate_demo_frame(10, end=datetime(2026, 1, 1))
 
 
-def test_cli_demo_and_api_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cli_demo_and_api_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["demo", "--output", str(tmp_path / "demo")])
     assert result.exit_code == 0
@@ -75,7 +86,24 @@ def test_cli_demo_and_api_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert payload["snapshots"] == 4
 
     called: dict[str, object] = {}
-    monkeypatch.setattr(cli.uvicorn, "run", lambda app, host, port, reload: called.update(app=app, host=host, port=port, reload=reload))
-    result = runner.invoke(cli.app, ["api", "--host", "127.0.0.1", "--port", "9090"])
+    monkeypatch.setattr(
+        cli.uvicorn,
+        "run",
+        lambda app, host, port, reload: called.update(
+            app=app,
+            host=host,
+            port=port,
+            reload=reload,
+        ),
+    )
+    result = runner.invoke(
+        cli.app,
+        ["api", "--host", "127.0.0.1", "--port", "9090"],
+    )
     assert result.exit_code == 0
-    assert called == {"app": "xrp_regime_engine.api:app", "host": "127.0.0.1", "port": 9090, "reload": False}
+    assert called == {
+        "app": "xrp_regime_engine.api:app",
+        "host": "127.0.0.1",
+        "port": 9090,
+        "reload": False,
+    }

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter
-from hashlib import sha256
 import math
 import re
+from collections import Counter
+from hashlib import sha256
 
 TOKEN_RE = re.compile(r"[\w.-]+", re.UNICODE)
 
@@ -28,5 +28,11 @@ class HashDenseEmbedder:
 class SparseLexicalEmbedder:
     def embed(self, text: str) -> dict[str, list[int] | list[float]]:
         counts = Counter(TOKEN_RE.findall(text.casefold()))
-        pairs = sorted((int.from_bytes(sha256(token.encode()).digest()[:4], "big"), count) for token, count in counts.items())
-        return {"indices": [index for index, _ in pairs], "values": [float(value) for _, value in pairs]}
+        pairs = sorted(
+            (int.from_bytes(sha256(token.encode()).digest()[:4], "big"), count)
+            for token, count in counts.items()
+        )
+        return {
+            "indices": [index for index, _ in pairs],
+            "values": [float(value) for _, value in pairs],
+        }

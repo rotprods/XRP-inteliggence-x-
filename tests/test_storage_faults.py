@@ -35,10 +35,11 @@ def test_latest_queries_return_empty_when_no_data(tmp_path: Path) -> None:
 
 def test_transaction_rolls_back_on_exception(tmp_path: Path) -> None:
     store = SQLiteStore(tmp_path / "x.db")
-    with pytest.raises(RuntimeError):
-        with store.connection() as conn:
-            conn.execute("INSERT INTO audit_events(event_type, payload_json) VALUES ('test', '{}')")
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError), store.connection() as conn:
+        conn.execute(
+            "INSERT INTO audit_events(event_type, payload_json) VALUES ('test', '{}')"
+        )
+        raise RuntimeError("boom")
     assert store.audit_event_count() == 0
 
 
@@ -61,7 +62,12 @@ def test_snapshot_upsert_preserves_single_row_and_audit_history(tmp_path: Path) 
     store = SQLiteStore(tmp_path / "x.db")
     item = snapshot()
     store.save_snapshot(item)
-    updated = item.model_copy(update={"bull_score": item.bull_score + 0.01, "bear_score": item.bear_score - 0.01})
+    updated = item.model_copy(
+        update={
+            "bull_score": item.bull_score + 0.01,
+            "bear_score": item.bear_score - 0.01,
+        }
+    )
     store.save_snapshot(updated)
     with store.connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM regime_snapshots").fetchone()[0]
@@ -92,7 +98,10 @@ def test_restore_rejects_missing_or_corrupt_backup(tmp_path: Path) -> None:
         SQLiteStore.restore_from(corrupt, tmp_path / "target.db")
 
 
-def test_restore_rejects_backup_when_quick_check_is_not_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restore_rejects_backup_when_quick_check_is_not_ok(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = tmp_path / "source.db"
     source.write_bytes(b"placeholder")
 
@@ -107,12 +116,18 @@ def test_restore_rejects_backup_when_quick_check_is_not_ok(tmp_path: Path, monke
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr("xrp_regime_engine.storage.sqlite3.connect", lambda path: FakeConnection())
+    monkeypatch.setattr(
+        "xrp_regime_engine.storage.sqlite3.connect",
+        lambda path: FakeConnection(),
+    )
     with pytest.raises(sqlite3.DatabaseError, match="backup failed integrity check"):
         SQLiteStore.restore_from(source, tmp_path / "target.db")
 
 
-def test_restore_rejects_target_when_post_restore_check_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restore_rejects_target_when_post_restore_check_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = SQLiteStore(tmp_path / "source.db")
     source.save_snapshot(snapshot())
     backup = source.backup_to(tmp_path / "backup.db")

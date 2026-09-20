@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Annotated
 
 import typer
 import uvicorn
@@ -10,12 +11,13 @@ from xrp_regime_engine.config import Settings
 from xrp_regime_engine.logging import configure_logging
 from xrp_regime_engine.pipeline import run_demo
 
-
 app = typer.Typer(no_args_is_help=True)
 
 
 @app.command()
-def demo(output: Path = typer.Option(Path("state/demo"), help="Output directory")) -> None:
+def demo(
+    output: Annotated[Path, typer.Option(help="Output directory")] = Path("state/demo"),
+) -> None:
     """Run a deterministic, network-free vertical slice."""
     configure_logging()
     result = run_demo(output)
