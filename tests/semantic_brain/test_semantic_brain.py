@@ -61,4 +61,53 @@ def test_entity_alias_collision_fails_closed() -> None:
 
 
 def test_regime_context_excludes_future_information_and_zero_weights_narrative() -> None:
-    records =
+    records = [
+        {
+            "claim_id": "c1",
+            "statement": "known",
+            "status": "FACT",
+            "evidence_confidence": 0.9,
+            "available_at": NOW - timedelta(minutes=1),
+            "source_ids": ["s1"],
+        },
+        {
+            "claim_id": "c2",
+            "statement": "future",
+            "status": "FACT",
+            "evidence_confidence": 0.9,
+            "available_at": NOW + timedelta(minutes=1),
+            "source_ids": ["s2"],
+        },
+        {
+            "claim_id": "c3",
+            "statement": "riddle",
+            "status": "CLAIM_ONLY",
+            "evidence_confidence": 0.1,
+            "available_at": NOW - timedelta(minutes=1),
+            "source_ids": ["social"],
+        },
+    ]
+    context = build_regime_context(records, NOW)
+    assert {item.claim_id for item in context.evidence} == {"c1", "c3"}
+    assert context.narrative_execution_weight == 0.0
+    assert "NON_DIRECTIONAL_RESEARCH_ONLY" in context.evidence[1].quality_flags
+
+
+def test_prediction_cannot_be_scored_before_horizon() -> None:
+    prediction = FrozenPrediction(
+        prediction_id="p1",
+        source_id="social:example",
+        original_text="red october",
+        published_at=NOW,
+        frozen_at=NOW + timedelta(minutes=1),
+        target="XRP > 3",
+        horizon_end=NOW + timedelta(days=30),
+        success_rule="close > 3",
+        failure_rule="otherwise",
+    )
+    with pytest.raises(ValueError, match="horizon"):
+        prediction.resolve(
+            PredictionResolution.HIT,
+            NOW + timedelta(days=1),
+            ["market:snapshot"],
+        )
