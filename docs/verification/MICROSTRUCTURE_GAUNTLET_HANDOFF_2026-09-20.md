@@ -12,6 +12,8 @@ Bounded continuation of the read-only XRP microstructure lineage on PR #15. This
 - Parent PR state: OPEN / DRAFT / mergeable at inspection
 - Microstructure PR: #15 `feat/binance-microstructure-v1` -> `feat/q1-verification-os`
 - PR #15 pre-wave head: `a7eef2eaa93df8560eebb7335d6fa7ed22d858c9`
+- Remediated implementation head before handoff-only commits: `2143ff644f4189f35baee24775082c6249eaa1d8`
+- First handoff persistence commit: `c0bbc2b761f4934d09262eae44617087f46c0e3f`
 - PR #15 remains SHADOW_ONLY / NON_EXECUTION
 - Production status remains `BLOCKED`
 - Probability calibration remains `FALSE`
@@ -48,11 +50,14 @@ No dependency, schema, external endpoint, credential, execution permission, or m
 | Full PR #15 pytest/coverage | NOT_RUN | No clean repository checkout available in this runtime; paid remote CI intentionally not triggered |
 | PR #15 Ruff/mypy/Bandit | NOT_RUN | Same constraint; do not infer PASS |
 | PR #13 FAST workflow | FAIL | Run `35538468629` reached compile successfully and failed at Ruff lint; downstream quality stages were skipped |
+| PR #15 mergeability after parent drift | BLOCKED | GitHub reports `mergeable=false`; compare against current parent is `diverged`, 18 commits ahead / 2 behind, merge base `b8143ce...` |
 | Production readiness | BLOCKED | Live-history, calibration, chronological shadow evidence, SLO/restore and release gates remain outstanding |
 
-## Parent-lineage caveat
+## Parent-lineage blocker
 
-PR #15 was originally cut from parent head `b8143ce873f9b3469c2cd78ed1d5389a1c0f1989`. During this wave `feat/q1-verification-os` had advanced to `d5a379cdcf0d1ae28717a292f87eccab9f86d00b`, two commits ahead of that original base. Do not run release verification for PR #15 against a stale parent assumption. Reconcile the updated parent deliberately before any merge or remote verification gate.
+PR #15 was originally cut from parent head `b8143ce873f9b3469c2cd78ed1d5389a1c0f1989`. The parent `feat/q1-verification-os` has advanced to `d5a379cdcf0d1ae28717a292f87eccab9f86d00b`, two commits ahead of that merge base. GitHub now reports PR #15 as non-mergeable, and direct comparison reports the branches as diverged: PR #15 is 18 commits ahead and 2 commits behind the updated parent.
+
+Do not run release verification or attempt merge from the stale lineage. The next integration action must reconcile those two parent commits deliberately, preserve both sets of changes, then re-run local/static verification before any remote gate.
 
 The parent FAST run currently fails at Ruff lint. The available workflow metadata identifies the failing stage but not the exact lint diagnostics, so the root cause is intentionally recorded as unresolved rather than guessed. Do not rerun CI until that cause is inspected/remediated locally or equivalent diagnostics are available.
 
@@ -74,11 +79,12 @@ This prevents source-public-but-not-yet-ingested information from leaking into w
 
 ## Next highest-value frontier
 
-1. Reconcile PR #15 with the updated #13 parent without bypassing the Q1 verification gate.
-2. Extend the synchronized local-book event plane into time-aware liquidity dynamics: replenishment, cancellation, depth velocity and persistence, each with point-in-time timestamps and gap/reconnect invalidation.
-3. Feed 1m/5m/15m/1h temporal windows into an uncalibrated evidence vector only; do not emit Bayesian/posterior probabilities until walk-forward calibration exists.
-4. Add freshness/staleness thresholds that force `NO_DATA`/degraded state when depth, trades, OI, funding or basis are temporally misaligned.
-5. Run full hermetic tests, Ruff, mypy, Bandit, coverage and manifest gates only when a clean runner/local checkout is available; avoid speculative CI retries.
+1. Reconcile PR #15 with the two updated #13 parent commits without bypassing the Q1 verification gate or overwriting either lineage.
+2. Resolve the parent Ruff failure from exact diagnostics before spending another CI run.
+3. Extend the synchronized local-book event plane into time-aware liquidity dynamics: replenishment, cancellation, depth velocity and persistence, each with point-in-time timestamps and gap/reconnect invalidation.
+4. Feed 1m/5m/15m/1h temporal windows into an uncalibrated evidence vector only; do not emit Bayesian/posterior probabilities until walk-forward calibration exists.
+5. Add freshness/staleness thresholds that force `NO_DATA`/degraded state when depth, trades, OI, funding or basis are temporally misaligned.
+6. Run full hermetic tests, Ruff, mypy, Bandit, coverage and manifest gates only when a clean runner/local checkout is available; avoid speculative CI retries.
 
 ## Rollback
 
