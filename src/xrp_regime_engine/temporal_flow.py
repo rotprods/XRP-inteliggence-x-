@@ -117,6 +117,7 @@ def build_temporal_window(
             for sample in samples
             if start < sample.observed_at <= prediction_time
             and sample.available_at <= prediction_time
+            and sample.fetched_at <= prediction_time
         ),
         key=lambda sample: (sample.observed_at, sample.available_at, sample.fetched_at),
     )
