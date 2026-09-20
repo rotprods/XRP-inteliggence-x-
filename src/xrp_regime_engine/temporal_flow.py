@@ -5,6 +5,12 @@ from datetime import datetime, timedelta
 from math import isfinite
 
 SUPPORTED_WINDOWS_SECONDS = frozenset({60, 300, 900, 3600})
+FRESHNESS_LIMIT_SECONDS = {
+    60: 15,
+    300: 60,
+    900: 180,
+    3600: 600,
+}
 
 
 def _require_aware(value: datetime, field: str) -> None:
@@ -83,6 +89,9 @@ class TemporalFlowWindow:
     open_interest_delta_pct: float | None
     funding_delta_bps: float | None
     basis_delta_bps: float | None
+    last_sample_age_seconds: float
+    freshness_limit_seconds: int
+    regime_eligible: bool
     quality_flags: tuple[str, ...]
     execution_weight: float = 0.0
 
@@ -150,6 +159,17 @@ def build_temporal_window(
     if basis_pair is None:
         flags.append("BASIS_NO_DATA")
 
+    freshness_limit = FRESHNESS_LIMIT_SECONDS[window_seconds]
+    last_sample_age = (prediction_time - last.observed_at).total_seconds()
+    if last_sample_age > freshness_limit:
+        flags.append("STALE_WINDOW")
+
+    ingestion_lag = (last.fetched_at - last.observed_at).total_seconds()
+    if ingestion_lag > freshness_limit:
+        flags.append("INGESTION_LAG")
+
+    regime_eligible = not any(flag in {"STALE_WINDOW", "INGESTION_LAG"} for flag in flags)
+
     return TemporalFlowWindow(
         symbol=first.symbol,
         prediction_time=prediction_time,
@@ -171,6 +191,9 @@ def build_temporal_window(
             None if funding_pair is None else (funding_pair[1] - funding_pair[0]) * 10_000
         ),
         basis_delta_bps=None if basis_pair is None else basis_pair[1] - basis_pair[0],
+        last_sample_age_seconds=last_sample_age,
+        freshness_limit_seconds=freshness_limit,
+        regime_eligible=regime_eligible,
         quality_flags=tuple(flags),
         execution_weight=0.0,
     )
