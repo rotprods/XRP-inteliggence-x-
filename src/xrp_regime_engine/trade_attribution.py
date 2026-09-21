@@ -104,8 +104,6 @@ def _complete_provenance(
     first_fetched = _require_present_aware(first_fetched_at, f"{field}.first_fetched_at")
     last_fetched = _require_present_aware(last_fetched_at, f"{field}.last_fetched_at")
 
-    if first_observed > last_observed:
-        raise ValueError(f"{field} observed envelope is reversed")
     if first_available > last_available:
         raise ValueError(f"{field} available envelope is reversed")
     if first_fetched > last_fetched:
