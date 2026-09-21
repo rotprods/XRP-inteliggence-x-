@@ -44,38 +44,38 @@ class TemporalFlowSample:
     basis_bps: float | None = None
 
     def __post_init__(self) -> None:
-        for field, value in (
+        for timestamp_field, timestamp_value in (
             ("observed_at", self.observed_at),
             ("available_at", self.available_at),
             ("fetched_at", self.fetched_at),
         ):
-            _require_aware(value, field)
+            _require_aware(timestamp_value, timestamp_field)
         if not self.observed_at <= self.available_at <= self.fetched_at:
             raise ValueError(
                 "microstructure timestamps must satisfy observed <= available <= fetched"
             )
         if not self.symbol:
             raise ValueError("symbol is required")
-        for field, value in (
+        for numeric_field, numeric_value in (
             ("mid_price", self.mid_price),
             ("depth_imbalance_25bps", self.depth_imbalance_25bps),
             ("aggressive_buy_notional", self.aggressive_buy_notional),
             ("aggressive_sell_notional", self.aggressive_sell_notional),
         ):
-            _require_finite(value, field)
+            _require_finite(numeric_value, numeric_field)
         if self.mid_price <= 0:
             raise ValueError("mid_price must be positive")
         if not -1 <= self.depth_imbalance_25bps <= 1:
             raise ValueError("depth imbalance must be within [-1, 1]")
         if self.aggressive_buy_notional < 0 or self.aggressive_sell_notional < 0:
             raise ValueError("aggressive notionals must be non-negative")
-        for field, value in (
+        for optional_field, optional_value in (
             ("open_interest", self.open_interest),
             ("funding_rate", self.funding_rate),
             ("basis_bps", self.basis_bps),
         ):
-            if value is not None:
-                _require_finite(value, field)
+            if optional_value is not None:
+                _require_finite(optional_value, optional_field)
         if self.open_interest is not None and self.open_interest < 0:
             raise ValueError("open_interest must be non-negative")
 

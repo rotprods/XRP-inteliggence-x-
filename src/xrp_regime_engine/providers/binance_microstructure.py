@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from xrp_regime_engine.microstructure import BookLevel, OrderBookSnapshot
+from xrp_regime_engine.models import Candle
 from xrp_regime_engine.providers.base import MarketDataProvider, ProviderError
 
 
@@ -17,7 +18,9 @@ class BinanceMicrostructureProvider(MarketDataProvider):
     def health_path(self) -> str:
         return "/api/v3/ping"
 
-    async def fetch_candles(self, asset: str, interval: str, limit: int = 300):
+    async def fetch_candles(
+        self, asset: str, interval: str, limit: int = 300
+    ) -> list[Candle]:
         raise ProviderError("microstructure provider does not expose candles")
 
     async def fetch_order_book(
