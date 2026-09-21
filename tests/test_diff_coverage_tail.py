@@ -7,7 +7,7 @@ from xrp_regime_engine.derivatives import FundingState, OpenInterestState
 from xrp_regime_engine.order_flow import OrderFlowState
 from xrp_regime_engine.temporal_alignment import build_aligned_temporal_window
 from xrp_regime_engine.temporal_flow import build_temporal_window
-from xrp_regime_engine.trade_attribution import _complete_provenance
+from xrp_regime_engine.trade_attribution import _derived_window_seconds
 
 T0 = datetime(2026, 9, 21, 7, 0, tzinfo=UTC)
 OBSERVED = T0 + timedelta(seconds=8)
@@ -109,15 +109,10 @@ def test_temporal_window_empty_input_returns_no_data() -> None:
     assert build_temporal_window((), prediction_time=PREDICTION, window_seconds=60) is None
 
 
-def test_trade_attribution_rejects_reversed_observed_provenance_envelope() -> None:
-    with pytest.raises(ValueError, match="observed envelope is reversed"):
-        _complete_provenance(
-            declared_complete=True,
-            first_observed_at=OBSERVED + timedelta(seconds=1),
-            last_observed_at=OBSERVED,
-            first_available_at=OBSERVED + timedelta(seconds=2),
-            last_available_at=OBSERVED + timedelta(seconds=2),
-            first_fetched_at=OBSERVED + timedelta(seconds=3),
-            last_fetched_at=OBSERVED + timedelta(seconds=3),
+def test_reversed_observation_window_fails_closed_before_provenance_reconciliation() -> None:
+    with pytest.raises(ValueError, match="finite and positive"):
+        _derived_window_seconds(
+            OBSERVED + timedelta(seconds=1),
+            OBSERVED,
             field="probe",
         )
