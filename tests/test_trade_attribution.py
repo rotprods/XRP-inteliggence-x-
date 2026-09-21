@@ -121,26 +121,57 @@ def test_aligned_streams_emit_compatibility_not_causal_attribution() -> None:
     assert state.execution_weight == 0.0
 
 
-def test_complete_provenance_derives_cross_stream_windows() -> None:
+def test_complete_provenance_derives_windows_but_requires_prediction_time() -> None:
     state = reconcile_depth_with_order_flow(complete_depth(), complete_flow())
     assert state.depth_window_seconds == 1.0
     assert state.flow_window_seconds == 1.0
     assert state.window_skew_seconds == 0.0
-    assert state.point_in_time_eligible is True
+    assert state.point_in_time_eligible is False
     assert state.regime_eligible is False
     assert "POINT_IN_TIME_PROVENANCE_COMPLETE_SHADOW_ONLY" in state.quality_flags
+    assert "PREDICTION_TIME_REQUIRED" in state.quality_flags
     assert "CALLER_WINDOW_FALLBACK" not in state.quality_flags
+    assert state.execution_weight == 0.0
+
+
+def test_complete_provenance_becomes_point_in_time_eligible_only_after_fetch() -> None:
+    state = reconcile_depth_with_order_flow(
+        complete_depth(),
+        complete_flow(),
+        prediction_time=NOW + timedelta(seconds=2),
+    )
+    assert state.point_in_time_eligible is True
+    assert state.regime_eligible is False
+    assert state.evidence_eligible is True
+    assert "FUTURE_KNOWLEDGE_BLOCKED" not in state.quality_flags
     assert state.execution_weight == 0.0
 
 
 def test_complete_provenance_ignores_conflicting_caller_window() -> None:
     state = reconcile_depth_with_order_flow(
-        complete_depth(), complete_flow(), flow_window_seconds=99.0
+        complete_depth(),
+        complete_flow(),
+        flow_window_seconds=99.0,
+        prediction_time=NOW + timedelta(seconds=2),
     )
     assert state.flow_window_seconds == 1.0
     assert state.point_in_time_eligible is True
     assert "CALLER_WINDOW_IGNORED" in state.quality_flags
     assert "CROSS_STREAM_WINDOW_MISALIGNED" not in state.quality_flags
+
+
+def test_future_fetched_data_is_blocked_at_prediction_time() -> None:
+    state = reconcile_depth_with_order_flow(
+        complete_depth(),
+        complete_flow(),
+        prediction_time=NOW + timedelta(seconds=1, milliseconds=10),
+    )
+    assert state.point_in_time_eligible is False
+    assert state.evidence_eligible is False
+    assert state.trade_compatible_removed_notional is None
+    assert state.removal_candidate_residual_notional is None
+    assert "FUTURE_KNOWLEDGE_BLOCKED" in state.quality_flags
+    assert state.execution_weight == 0.0
 
 
 def test_end_time_misalignment_fails_closed_without_pairing_notionals() -> None:
