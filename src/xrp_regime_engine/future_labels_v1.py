@@ -163,13 +163,19 @@ class FutureOutcomeLabel:
             label_end_at=datetime.fromisoformat(str(payload["label_end_at"])),
             resolved_at=datetime.fromisoformat(str(payload["resolved_at"])),
             barrier_set_id=str(payload["barrier_set_id"]),
-            start_price=float(payload["start_price"]),
-            end_price=float(payload["end_price"]),
-            future_return=float(payload["future_return"]),
-            maximum_favorable_excursion=float(payload["maximum_favorable_excursion"]),
-            maximum_adverse_excursion=float(payload["maximum_adverse_excursion"]),
-            realized_log_volatility=float(payload["realized_log_volatility"]),
-            maximum_drawdown=float(payload["maximum_drawdown"]),
+            start_price=float(cast(float | int | str, payload["start_price"])),
+            end_price=float(cast(float | int | str, payload["end_price"])),
+            future_return=float(cast(float | int | str, payload["future_return"])),
+            maximum_favorable_excursion=float(
+                cast(float | int | str, payload["maximum_favorable_excursion"])
+            ),
+            maximum_adverse_excursion=float(
+                cast(float | int | str, payload["maximum_adverse_excursion"])
+            ),
+            realized_log_volatility=float(
+                cast(float | int | str, payload["realized_log_volatility"])
+            ),
+            maximum_drawdown=float(cast(float | int | str, payload["maximum_drawdown"])),
             positive_return_touches=cast(Mapping[str, bool], payload["positive_return_touches"]),
             negative_return_touches=cast(Mapping[str, bool], payload["negative_return_touches"]),
             absolute_price_touches=cast(Mapping[str, bool], payload["absolute_price_touches"]),
