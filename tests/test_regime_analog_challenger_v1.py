@@ -4,7 +4,7 @@ from hashlib import sha256
 
 import pytest
 
-from xrp_regime_engine.baseline_models_v1 import BaselineTrainingPolicy
+from xrp_regime_engine.baseline_models_v1 import BaselineKind, BaselineTrainingPolicy
 from xrp_regime_engine.baseline_oos_factory_v1 import (
     BaselineSkillPolicy,
     run_baseline_oos_factory,
@@ -17,17 +17,22 @@ from xrp_regime_engine.future_labels_v1 import (
 from xrp_regime_engine.historical_analog_v1 import (
     AnalogSearchConfig,
     DistanceMetric,
+    HistoricalAnalogMatch,
 )
 from xrp_regime_engine.historical_contract import EligibilityClass
 from xrp_regime_engine.historical_features_v1 import HistoricalFeatureRow
 from xrp_regime_engine.regime_analog_challenger_v1 import (
     RegimeAnalogChallengerPolicy,
     RegimeAnalogSkillState,
+    _baseline_evidence_on_subset,
+    _fold_rows,
+    _weighted_probability,
     run_regime_analog_oos_challenger,
 )
-from xrp_regime_engine.regime_state_v1 import canonical_regime_policy
+from xrp_regime_engine.regime_state_v1 import canonical_regime_policy, classify_regime
 from xrp_regime_engine.research_horizon import ResearchHorizon, horizon_end_at
 from xrp_regime_engine.walk_forward_v1 import (
+    LabeledFeatureRow,
     WalkForwardConfig,
     build_walk_forward_folds,
     join_labeled_rows,
@@ -396,3 +401,302 @@ def test_challenger_policy_validation() -> None:
         challenger_policy(sensitivity_metrics=())
     with pytest.raises(ValueError, match="scenario axes"):
         challenger_policy(ablation_sets=())
+
+
+
+def test_baseline_run_defensive_guards() -> None:
+    features, labels, folds, baseline = corpus()
+
+    with pytest.raises(ValueError, match="preserve final holdout"):
+        run_regime_analog_oos_challenger(
+            features=features,
+            labels=labels,
+            folds=folds,
+            baseline_run=replace(baseline, final_holdout_untouched=False),
+            event_key="return_gt_0",
+            challenger_policy=challenger_policy(),
+        )
+    with pytest.raises(ValueError, match="non-authoritative"):
+        run_regime_analog_oos_challenger(
+            features=features,
+            labels=labels,
+            folds=folds,
+            baseline_run=replace(baseline, production_ready=True),
+            event_key="return_gt_0",
+            challenger_policy=challenger_policy(),
+        )
+    with pytest.raises(ValueError, match="DatasetVersion"):
+        run_regime_analog_oos_challenger(
+            features=features,
+            labels=labels,
+            folds=folds,
+            baseline_run=replace(baseline, dataset_version_id="bad"),
+            event_key="return_gt_0",
+            challenger_policy=challenger_policy(),
+        )
+    with pytest.raises(ValueError, match="folds cannot be empty"):
+        run_regime_analog_oos_challenger(
+            features=features,
+            labels=labels,
+            folds=(),
+            baseline_run=replace(baseline, fold_ids=()),
+            event_key="return_gt_0",
+            challenger_policy=challenger_policy(),
+        )
+    with pytest.raises(ValueError, match="horizon mismatch"):
+        run_regime_analog_oos_challenger(
+            features=features,
+            labels=labels,
+            folds=folds,
+            baseline_run=replace(baseline, horizon=ResearchHorizon.H4),
+            event_key="return_gt_0",
+            challenger_policy=challenger_policy(),
+        )
+
+
+def test_fold_row_defensive_guards() -> None:
+    features, labels, rows, folds = (
+        *corpus()[:2],
+        join_labeled_rows(*corpus()[:2]),
+        corpus()[2],
+    )
+    del features, labels
+    row_map = {item.feature.feature_row_id: item for item in rows}
+    fold = folds[0]
+
+    unknown = replace(
+        fold,
+        train_feature_row_ids=("feature:sha256:" + "f" * 64,),
+    )
+    with pytest.raises(ValueError, match="unknown feature_row_id"):
+        _fold_rows(unknown, row_map)
+
+    empty = replace(fold, train_feature_row_ids=())
+    with pytest.raises(ValueError, match="non-empty"):
+        _fold_rows(empty, row_map)
+
+    target_id = fold.test_feature_row_ids[0]
+    original = row_map[target_id]
+    h4_feature = replace(original.feature, horizon=ResearchHorizon.H4)
+    h4_label = replace(original.label, horizon=ResearchHorizon.H4)
+    contaminated = dict(row_map)
+    contaminated[target_id] = LabeledFeatureRow(
+        feature=h4_feature,
+        label=h4_label,
+    )
+    with pytest.raises(ValueError, match="horizon mismatch"):
+        _fold_rows(fold, contaminated)
+
+
+def test_weighted_probability_defensive_guards() -> None:
+    features, labels, rows, _ = (
+        *corpus(30)[:2],
+        join_labeled_rows(*corpus(30)[:2]),
+        corpus(30)[2],
+    )
+    del features, labels
+    row = rows[0]
+    state = classify_regime(row.feature)
+    state_map = {state.state_id: row}
+
+    zero_similarity = HistoricalAnalogMatch(
+        state_id=state.state_id,
+        prediction_time=state.prediction_time,
+        regime=state.regime,
+        distance=1.0,
+        similarity=0.0,
+        provider_universe_version=state.provider_universe_version,
+    )
+    with pytest.raises(ValueError, match="similarity"):
+        _weighted_probability(
+            (zero_similarity,),
+            state_map,
+            event_key="return_gt_0",
+            prior_rate=0.5,
+            prior_strength=1.0,
+        )
+
+    unknown = replace(
+        zero_similarity,
+        state_id="regime-state:sha256:" + "f" * 64,
+        similarity=0.5,
+    )
+    with pytest.raises(ValueError, match="outside training lineage"):
+        _weighted_probability(
+            (unknown,),
+            state_map,
+            event_key="return_gt_0",
+            prior_rate=0.5,
+            prior_strength=1.0,
+        )
+
+    with pytest.raises(ValueError, match="denominator"):
+        _weighted_probability(
+            (),
+            {},
+            event_key="return_gt_0",
+            prior_rate=0.5,
+            prior_strength=0.0,
+        )
+
+
+def test_baseline_subset_skips_missing_model_predictions() -> None:
+    _, _, _, baseline = corpus()
+    b0_predictions = tuple(
+        item
+        for item in baseline.predictions
+        if item.model_id == "baseline:B0_BASE_RATE"
+    )
+    b0_ids = {item.prediction_id for item in b0_predictions}
+    b0_outcomes = tuple(
+        item for item in baseline.outcomes if item.prediction_id in b0_ids
+    )
+    truncated = replace(
+        baseline,
+        predictions=b0_predictions,
+        outcomes=b0_outcomes,
+    )
+    feature_ids = {item.feature_row_id for item in b0_predictions}
+    evidence = _baseline_evidence_on_subset(truncated, feature_ids)
+    assert BaselineKind.B0_BASE_RATE in evidence
+    assert len(evidence) == 1
+
+
+def test_training_state_identity_collision_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xrp_regime_engine.regime_analog_challenger_v1 as module
+
+    features, labels, folds, baseline = corpus()
+    fixed = classify_regime(features[0])
+    monkeypatch.setattr(
+        module,
+        "classify_regime",
+        lambda feature, policy: fixed,
+    )
+    with pytest.raises(ValueError, match="identity collision"):
+        run_regime_analog_oos_challenger(
+            features=features,
+            labels=labels,
+            folds=folds,
+            baseline_run=baseline,
+            event_key="return_gt_0",
+            challenger_policy=challenger_policy(
+                require_stable_sensitivity=False,
+            ),
+        )
+
+
+def test_unstable_sensitivity_suppresses_predictions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xrp_regime_engine.regime_analog_challenger_v1 as module
+
+    features, labels, folds, baseline = corpus()
+
+    class Unstable:
+        report_id = "analog-sensitivity:sha256:" + "c" * 64
+        stable = False
+        reasons = ("ANALOG_TOP_K_UNSTABLE",)
+
+    monkeypatch.setattr(
+        module,
+        "run_analog_sensitivity",
+        lambda *args, **kwargs: Unstable(),
+    )
+    result = run_regime_analog_oos_challenger(
+        features=features,
+        labels=labels,
+        folds=folds,
+        baseline_run=baseline,
+        event_key="return_gt_0",
+        challenger_policy=challenger_policy(),
+    )
+    assert result.state is RegimeAnalogSkillState.INSUFFICIENT_EVIDENCE
+    assert result.predictions == ()
+    assert any(
+        "ANALOG_TOP_K_UNSTABLE" in item.reasons
+        for item in result.suppressions
+    )
+
+
+def test_missing_h6_comparator_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xrp_regime_engine.regime_analog_challenger_v1 as module
+
+    features, labels, folds, baseline = corpus()
+    monkeypatch.setattr(
+        module,
+        "_baseline_evidence_on_subset",
+        lambda baseline_run, feature_ids: {},
+    )
+    with pytest.raises(ValueError, match="no eligible H6 baseline comparator"):
+        run_regime_analog_oos_challenger(
+            features=features,
+            labels=labels,
+            folds=folds,
+            baseline_run=baseline,
+            event_key="return_gt_0",
+            challenger_policy=challenger_policy(),
+        )
+
+
+def test_class_and_suppression_gates_are_explicit() -> None:
+    features, labels, folds, baseline = corpus(
+        last_missing_relative=True,
+    )
+    result = run_regime_analog_oos_challenger(
+        features=features,
+        labels=labels,
+        folds=folds,
+        baseline_run=baseline,
+        event_key="return_gt_0",
+        challenger_policy=challenger_policy(
+            min_class_count=10_000,
+            max_suppressed_fraction=0.0,
+        ),
+    )
+    assert result.state is RegimeAnalogSkillState.INSUFFICIENT_EVIDENCE
+    assert "INSUFFICIENT_POSITIVE_CLASS" in result.reasons
+    assert "INSUFFICIENT_NEGATIVE_CLASS" in result.reasons
+    assert "EXCESSIVE_ANALOG_SUPPRESSION" in result.reasons
+
+
+def test_log_loss_regression_gate_is_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xrp_regime_engine.regime_analog_challenger_v1 as module
+
+    features, labels, folds, baseline = corpus()
+    first = run_regime_analog_oos_challenger(
+        features=features,
+        labels=labels,
+        folds=folds,
+        baseline_run=baseline,
+        event_key="return_gt_0",
+        challenger_policy=challenger_policy(),
+    )
+    assert first.comparator_evidence is not None
+    fabricated = replace(
+        first.comparator_evidence,
+        brier_score=1.0,
+        log_loss=0.0,
+    )
+    monkeypatch.setattr(
+        module,
+        "_baseline_evidence_on_subset",
+        lambda baseline_run, feature_ids: {
+            BaselineKind.B0_BASE_RATE: fabricated
+        },
+    )
+    second = run_regime_analog_oos_challenger(
+        features=features,
+        labels=labels,
+        folds=folds,
+        baseline_run=baseline,
+        event_key="return_gt_0",
+        challenger_policy=challenger_policy(),
+    )
+    assert second.state is RegimeAnalogSkillState.NO_DEMONSTRATED_REGIME_SKILL
+    assert "LOG_LOSS_REGRESSION_VS_H6" in second.reasons
