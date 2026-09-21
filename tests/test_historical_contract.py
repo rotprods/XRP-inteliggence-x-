@@ -290,3 +290,30 @@ def test_as_of_reconstructed_filter_and_revision_ranking_edges() -> None:
     no_revision = replace(obs("old"), revision_sequence=None)
     newer_revision = obs("new", revision=1)
     assert select_as_of((no_revision, newer_revision), prediction_time=T0) == (newer_revision,)
+
+
+def test_defensive_unreachable_availability_and_rank_guards() -> None:
+    item = obs("defensive")
+    object.__setattr__(item, "availability_precision", "CORRUPT")
+    with pytest.raises(ValueError, match="unsupported availability precision"):
+        item.__post_init__()
+
+    date_only = obs(
+        "date-only-defensive",
+        precision=AvailabilityPrecision.DATE_ONLY,
+        available_at=None,
+        available_date=date(2026, 1, 2),
+        fetched_at=T0 - timedelta(days=1),
+    )
+    object.__setattr__(date_only, "available_date", None)
+    assert date_only.availability_boundary() is None
+
+    unknown = obs(
+        "unknown-rank",
+        precision=AvailabilityPrecision.UNKNOWN,
+        available_at=None,
+    )
+    with pytest.raises(ValueError, match="without availability"):
+        from xrp_regime_engine.historical_contract import _revision_rank
+
+        _revision_rank(unknown)
