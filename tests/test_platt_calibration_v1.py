@@ -246,8 +246,7 @@ def test_candidate_evaluation_records_join_and_guards() -> None:
             (
                 replace(
                     first_outcome,
-                    prediction_time=first_outcome.prediction_time
-                    + timedelta(seconds=1),
+                    prediction_time=first_outcome.prediction_time + timedelta(seconds=1),
                 ),
             ),
         )
