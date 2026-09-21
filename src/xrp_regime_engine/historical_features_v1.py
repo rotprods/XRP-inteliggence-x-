@@ -200,9 +200,8 @@ class HistoricalFeatureRow:
             feature_families=families,
             quality_flags=cast(Sequence[str], payload["quality_flags"]),
         )
-        if (
-            row.feature_row_id != payload.get("feature_row_id")
-            or row.feature_sha256 != payload.get("feature_sha256")
+        if row.feature_row_id != payload.get("feature_row_id") or row.feature_sha256 != payload.get(
+            "feature_sha256"
         ):
             raise RuntimeError("stored feature row digest does not match payload")
         return row
