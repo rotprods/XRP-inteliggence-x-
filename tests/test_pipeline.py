@@ -5,7 +5,7 @@ from pathlib import Path
 
 from xrp_regime_engine.models import DataFlag, RegimeSnapshot
 from xrp_regime_engine.pipeline import run_demo
-from xrp_regime_engine.storage import SQLiteStore
+from xrp_regime_engine.storage import SCHEMA_VERSION, SQLiteStore
 
 
 def test_demo_pipeline_writes_auditable_synthetic_outputs(tmp_path: Path) -> None:
@@ -38,6 +38,6 @@ def test_demo_pipeline_writes_auditable_synthetic_outputs(tmp_path: Path) -> Non
     assert "synthetic" in explanation.lower()
 
     store = SQLiteStore(output / "engine.sqlite3")
-    assert store.schema_version() == 1
+    assert store.schema_version() == SCHEMA_VERSION
     assert store.latest_snapshot("XRP", "1d") is not None
     assert store.audit_event_count() == 5
