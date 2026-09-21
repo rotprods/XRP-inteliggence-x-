@@ -571,9 +571,7 @@ def test_checkpoint_validation_and_corrupt_cursor_detection(tmp_path: Path) -> N
         updated_at=T0,
     )
     with store._connection() as connection:
-        connection.execute(
-            "UPDATE checkpoints SET cursor_json='[]' WHERE job_key='job'"
-        )
+        connection.execute("UPDATE checkpoints SET cursor_json='[]' WHERE job_key='job'")
     with pytest.raises(RuntimeError, match="cursor must be an object"):
         store.load_checkpoint("job")
 
@@ -583,9 +581,7 @@ def test_corrupt_stored_observation_shape_is_detected(tmp_path: Path) -> None:
     item = registered_observation(store, "a")
     store.save_observation(item)
     with store._connection() as connection:
-        connection.execute(
-            "UPDATE observations SET payload_json='[]' WHERE observation_id='a'"
-        )
+        connection.execute("UPDATE observations SET payload_json='[]' WHERE observation_id='a'")
     with pytest.raises(RuntimeError, match="root must be an object"):
         store.load_observations("xrp_spot_1h")
 
