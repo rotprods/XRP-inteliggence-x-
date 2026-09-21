@@ -2,7 +2,7 @@ name: verification-os
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/q1-verification-os]
     paths:
       - 'src/**'
       - 'tests/**'
@@ -40,6 +40,7 @@ jobs:
     timeout-minutes: 30
     env:
       CI_PROFILE: ${{ github.event_name == 'pull_request' && 'fast' || inputs.profile }}
+      DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
       PYTHONDONTWRITEBYTECODE: '1'
       PYTHONHASHSEED: '0'
       PYTHONPATH: src
@@ -111,7 +112,7 @@ jobs:
       - name: Changed-line coverage — 100%
         run: >-
           python scripts/check_changed_line_coverage.py coverage.json
-          --base origin/main
+          --base "$DIFF_BASE"
           --threshold 100
           --report quality/diff-coverage.json
 
