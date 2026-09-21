@@ -403,7 +403,6 @@ def test_challenger_policy_validation() -> None:
         challenger_policy(ablation_sets=())
 
 
-
 def test_baseline_run_defensive_guards() -> None:
     features, labels, folds, baseline = corpus()
 
@@ -543,14 +542,10 @@ def test_weighted_probability_defensive_guards() -> None:
 def test_baseline_subset_skips_missing_model_predictions() -> None:
     _, _, _, baseline = corpus()
     b0_predictions = tuple(
-        item
-        for item in baseline.predictions
-        if item.model_id == "baseline:B0_BASE_RATE"
+        item for item in baseline.predictions if item.model_id == "baseline:B0_BASE_RATE"
     )
     b0_ids = {item.prediction_id for item in b0_predictions}
-    b0_outcomes = tuple(
-        item for item in baseline.outcomes if item.prediction_id in b0_ids
-    )
+    b0_outcomes = tuple(item for item in baseline.outcomes if item.prediction_id in b0_ids)
     truncated = replace(
         baseline,
         predictions=b0_predictions,
@@ -614,10 +609,7 @@ def test_unstable_sensitivity_suppresses_predictions(
     )
     assert result.state is RegimeAnalogSkillState.INSUFFICIENT_EVIDENCE
     assert result.predictions == ()
-    assert any(
-        "ANALOG_TOP_K_UNSTABLE" in item.reasons
-        for item in result.suppressions
-    )
+    assert any("ANALOG_TOP_K_UNSTABLE" in item.reasons for item in result.suppressions)
 
 
 def test_missing_h6_comparator_fails_closed(
@@ -686,9 +678,7 @@ def test_log_loss_regression_gate_is_explicit(
     monkeypatch.setattr(
         module,
         "_baseline_evidence_on_subset",
-        lambda baseline_run, feature_ids: {
-            BaselineKind.B0_BASE_RATE: fabricated
-        },
+        lambda baseline_run, feature_ids: {BaselineKind.B0_BASE_RATE: fabricated},
     )
     second = run_regime_analog_oos_challenger(
         features=features,
