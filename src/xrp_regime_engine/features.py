@@ -52,11 +52,7 @@ def _finite(value: float | int | np.floating[object] | None) -> FeatureValue:
 
 
 def _clean(series: pd.Series) -> pd.Series:
-    return (
-        pd.to_numeric(series, errors="coerce")
-        .replace([np.inf, -np.inf], np.nan)
-        .dropna()
-    )
+    return pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
 
 
 def _return(series: pd.Series, periods: int) -> FeatureValue:
@@ -119,11 +115,7 @@ def _paired_returns(
         ],
         axis=1,
     )
-    return (
-        joined.replace([np.inf, -np.inf], np.nan)
-        .dropna()
-        .tail(window)
-    )
+    return joined.replace([np.inf, -np.inf], np.nan).dropna().tail(window)
 
 
 def _beta(asset: pd.Series, benchmark: pd.Series, window: int = 90) -> FeatureValue:

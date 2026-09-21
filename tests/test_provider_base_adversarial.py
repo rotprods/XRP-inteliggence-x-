@@ -75,7 +75,14 @@ def test_retry_after_parser_is_bounded(header: str | None, expected: float | Non
 
 @pytest.mark.asyncio
 async def test_bounded_body_rejects_invalid_content_length() -> None:
-    item = provider(lambda request: httpx.Response(200, content=b"{}", headers={"content-type": "application/json", "content-length": "bad"}), max_response_bytes=10)
+    item = provider(
+        lambda request: httpx.Response(
+            200,
+            content=b"{}",
+            headers={"content-type": "application/json", "content-length": "bad"},
+        ),
+        max_response_bytes=10,
+    )
     try:
         with pytest.raises(ProviderError, match="invalid content-length"):
             await item._request_json("GET", "/x")
@@ -85,7 +92,12 @@ async def test_bounded_body_rejects_invalid_content_length() -> None:
 
 @pytest.mark.asyncio
 async def test_streamed_body_limit_is_enforced_without_content_length() -> None:
-    item = provider(lambda request: httpx.Response(200, content=b"01234567890", headers={"content-type": "application/json"}), max_response_bytes=10)
+    item = provider(
+        lambda request: httpx.Response(
+            200, content=b"01234567890", headers={"content-type": "application/json"}
+        ),
+        max_response_bytes=10,
+    )
     try:
         with pytest.raises(ProviderError, match="oversized"):
             await item._request_json("GET", "/x")
@@ -96,7 +108,11 @@ async def test_streamed_body_limit_is_enforced_without_content_length() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("raw", [b"not-json", b"1", b"null", b'"hello"'])
 async def test_malformed_or_scalar_json_is_rejected(raw: bytes) -> None:
-    item = provider(lambda request: httpx.Response(200, content=raw, headers={"content-type": "application/json"}))
+    item = provider(
+        lambda request: httpx.Response(
+            200, content=raw, headers={"content-type": "application/json"}
+        )
+    )
     try:
         with pytest.raises(ProviderError):
             await item._request_json("GET", "/x")
@@ -172,7 +188,9 @@ async def test_context_manager_closes_client() -> None:
 async def test_dns_resolution_failures_are_classified(monkeypatch: pytest.MonkeyPatch) -> None:
     item = StubProvider("https://api.test.invalid")
     try:
-        monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("dns")))
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("dns"))
+        )
         with pytest.raises(RetryableProviderError, match="DNS resolution failed"):
             await item._resolve_public_addresses("api.test.invalid")
 
@@ -180,11 +198,23 @@ async def test_dns_resolution_failures_are_classified(monkeypatch: pytest.Monkey
         with pytest.raises(RetryableProviderError, match="no addresses"):
             await item._resolve_public_addresses("api.test.invalid")
 
-        monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))])
+        monkeypatch.setattr(
+            socket,
+            "getaddrinfo",
+            lambda *args, **kwargs: [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))
+            ],
+        )
         with pytest.raises(ProviderError, match="non-public"):
             await item._resolve_public_addresses("api.test.invalid")
 
-        monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("not-an-ip", 443))])
+        monkeypatch.setattr(
+            socket,
+            "getaddrinfo",
+            lambda *args, **kwargs: [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("not-an-ip", 443))
+            ],
+        )
         with pytest.raises(ProviderError, match="invalid IP"):
             await item._resolve_public_addresses("api.test.invalid")
     finally:
@@ -192,7 +222,9 @@ async def test_dns_resolution_failures_are_classified(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_dns_public_results_are_sorted_and_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_dns_public_results_are_sorted_and_deduplicated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     item = StubProvider("https://api.test.invalid")
     try:
         monkeypatch.setattr(
@@ -230,7 +262,14 @@ class ChunkStream(httpx.AsyncByteStream):
 
 @pytest.mark.asyncio
 async def test_streamed_body_exceeding_limit_without_content_length_is_rejected() -> None:
-    item = provider(lambda request: httpx.Response(200, stream=ChunkStream([b"12345", b"678901"]), headers={"content-type": "application/json"}), max_response_bytes=10)
+    item = provider(
+        lambda request: httpx.Response(
+            200,
+            stream=ChunkStream([b"12345", b"678901"]),
+            headers={"content-type": "application/json"},
+        ),
+        max_response_bytes=10,
+    )
     try:
         with pytest.raises(ProviderError, match="oversized"):
             await item._request_json("GET", "/stream")
@@ -248,6 +287,7 @@ async def test_retry_paths_honor_positive_sleep(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr("xrp_regime_engine.providers.base.asyncio.sleep", fake_sleep)
 
     calls = 0
+
     def transient(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
@@ -255,7 +295,12 @@ async def test_retry_paths_honor_positive_sleep(monkeypatch: pytest.MonkeyPatch)
             return httpx.Response(429, json={"error": "rate"}, headers={"retry-after": "0.01"})
         return httpx.Response(200, json={"ok": True})
 
-    item = StubProvider("https://api.test.invalid", max_attempts=2, retry_base_seconds=0.01, transport=httpx.MockTransport(transient))
+    item = StubProvider(
+        "https://api.test.invalid",
+        max_attempts=2,
+        retry_base_seconds=0.01,
+        transport=httpx.MockTransport(transient),
+    )
     try:
         await item._request_json("GET", "/x")
     finally:
@@ -264,6 +309,7 @@ async def test_retry_paths_honor_positive_sleep(monkeypatch: pytest.MonkeyPatch)
 
     calls = 0
     sleeps.clear()
+
     def broken(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
@@ -271,7 +317,12 @@ async def test_retry_paths_honor_positive_sleep(monkeypatch: pytest.MonkeyPatch)
             raise httpx.ConnectError("boom", request=request)
         return httpx.Response(200, json={"ok": True})
 
-    item = StubProvider("https://api.test.invalid", max_attempts=2, retry_base_seconds=0.01, transport=httpx.MockTransport(broken))
+    item = StubProvider(
+        "https://api.test.invalid",
+        max_attempts=2,
+        retry_base_seconds=0.01,
+        transport=httpx.MockTransport(broken),
+    )
     try:
         await item._request_json("GET", "/x")
     finally:

@@ -22,7 +22,9 @@ def client_for(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[TestCli
     return TestClient(api.app), SQLiteStore(path)
 
 
-def test_invalid_horizon_is_rejected_without_stack_trace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_invalid_horizon_is_rejected_without_stack_trace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, _ = client_for(tmp_path, monkeypatch)
     response = client.get("/v1/regime/xrp/2h")
     assert response.status_code == 400
@@ -30,7 +32,9 @@ def test_invalid_horizon_is_rejected_without_stack_trace(tmp_path: Path, monkeyp
     assert "traceback" not in response.text.lower()
 
 
-def test_readiness_reports_blocked_and_available_horizons(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_readiness_reports_blocked_and_available_horizons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, store = client_for(tmp_path, monkeypatch)
     features = compute_features(generate_demo_frame(), supplemental=DEMO_SUPPLEMENTAL_FEATURES)
     blocked = score_regime(features, Horizon.D1, minimum_data_confidence=1.0)
@@ -43,7 +47,9 @@ def test_readiness_reports_blocked_and_available_horizons(tmp_path: Path, monkey
     assert payload["read_only"] is True
 
 
-def test_provider_health_endpoint_is_read_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provider_health_endpoint_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, store = client_for(tmp_path, monkeypatch)
     store.save_health(
         ProviderHealth(
@@ -59,7 +65,9 @@ def test_provider_health_endpoint_is_read_only(tmp_path: Path, monkeypatch: pyte
     assert response.json()[0]["provider"] == "coinbase"
 
 
-def test_explain_contract_and_no_data_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_explain_contract_and_no_data_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, store = client_for(tmp_path, monkeypatch)
     missing = client.get("/v1/explain/xrp/1d")
     assert missing.status_code == 404

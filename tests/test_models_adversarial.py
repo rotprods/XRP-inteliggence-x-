@@ -160,7 +160,11 @@ def test_asset_observation_rejects_temporal_mismatch() -> None:
             unit="pct",
             observed_at=base,
             available_at=base,
-            provenance=provenance(observed_at=base + timedelta(seconds=1), available_at=base + timedelta(seconds=1), fetched_at=base + timedelta(seconds=1)),
+            provenance=provenance(
+                observed_at=base + timedelta(seconds=1),
+                available_at=base + timedelta(seconds=1),
+                fetched_at=base + timedelta(seconds=1),
+            ),
         )
 
 

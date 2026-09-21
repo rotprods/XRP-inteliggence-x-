@@ -79,7 +79,5 @@ class FredProvider(MarketDataProvider):
             )
         return observations
 
-    async def fetch_candles(
-        self, asset: str, interval: str, limit: int = 300
-    ) -> list[Candle]:
+    async def fetch_candles(self, asset: str, interval: str, limit: int = 300) -> list[Candle]:
         raise ProviderError("FRED provides economic observations, not OHLC candles")

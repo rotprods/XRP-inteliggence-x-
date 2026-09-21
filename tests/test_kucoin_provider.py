@@ -105,7 +105,9 @@ async def test_kucoin_skips_future_open_candle_and_slices_limit() -> None:
 
 @pytest.mark.asyncio
 async def test_kucoin_rejects_unsupported_asset_interval_and_limit() -> None:
-    provider = KuCoinSpotProvider("https://api.kucoin.com", transport=mock({"code": "200000", "data": []}))
+    provider = KuCoinSpotProvider(
+        "https://api.kucoin.com", transport=mock({"code": "200000", "data": []})
+    )
     try:
         with pytest.raises(ProviderError, match="unsupported asset/interval"):
             await provider.fetch_candles("XRP_USD", "1h", 1)

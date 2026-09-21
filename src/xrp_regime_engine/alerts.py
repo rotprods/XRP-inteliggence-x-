@@ -45,9 +45,17 @@ class AlertRegistry:
                 continue
             self._last_sent[dedupe_key] = now
             alert_id = hashlib.sha256(f"{dedupe_key}:{now.isoformat()}".encode()).hexdigest()[:16]
-            events.append(AlertEvent(
-                alert_id=alert_id, created_at=now, severity=severity, rule_id=rule_id,
-                asset=snapshot.asset, horizon=snapshot.horizon, summary=summary,
-                dedupe_key=dedupe_key, payload=snapshot.model_dump(mode="json"),
-            ))
+            events.append(
+                AlertEvent(
+                    alert_id=alert_id,
+                    created_at=now,
+                    severity=severity,
+                    rule_id=rule_id,
+                    asset=snapshot.asset,
+                    horizon=snapshot.horizon,
+                    summary=summary,
+                    dedupe_key=dedupe_key,
+                    payload=snapshot.model_dump(mode="json"),
+                )
+            )
         return events

@@ -32,9 +32,7 @@ def health() -> dict[str, str | bool]:
 @app.get("/ready")
 def readiness() -> dict[str, object]:
     store = SQLiteStore(DB_PATH)
-    snapshots = [
-        store.latest_snapshot("XRP", horizon) for horizon in sorted(SUPPORTED_HORIZONS)
-    ]
+    snapshots = [store.latest_snapshot("XRP", horizon) for horizon in sorted(SUPPORTED_HORIZONS)]
     available = [snapshot.horizon.value for snapshot in snapshots if snapshot is not None]
     if not available:
         raise HTTPException(status_code=503, detail="no regime snapshots available")
@@ -62,9 +60,7 @@ def latest_xrp_regime(horizon: str = "1d") -> dict[str, object]:
 
 @app.get("/v1/providers/health")
 def provider_health() -> list[dict[str, object]]:
-    return [
-        item.model_dump(mode="json") for item in SQLiteStore(DB_PATH).latest_health()
-    ]
+    return [item.model_dump(mode="json") for item in SQLiteStore(DB_PATH).latest_health()]
 
 
 @app.get("/v1/explain/xrp/{horizon}")

@@ -15,7 +15,9 @@ pytestmark = [pytest.mark.temporal, pytest.mark.contract]
 def test_leap_day_and_timezone_offset_normalize_without_date_loss() -> None:
     local = timezone(timedelta(hours=2))
     observed = datetime(2024, 2, 29, 12, 30, tzinfo=local)
-    item = Provenance(provider="p", observed_at=observed, available_at=observed, fetched_at=observed)
+    item = Provenance(
+        provider="p", observed_at=observed, available_at=observed, fetched_at=observed
+    )
     assert item.observed_at == datetime(2024, 2, 29, 10, 30, tzinfo=UTC)
 
 

@@ -19,8 +19,7 @@ def run_demo(output: str | Path) -> dict[str, object]:
     frame = generate_demo_frame()
     features = compute_features(frame, supplemental=DEMO_SUPPLEMENTAL_FEATURES)
     snapshots = [
-        score_regime(features, horizon, input_flags=[DataFlag.SYNTHETIC])
-        for horizon in Horizon
+        score_regime(features, horizon, input_flags=[DataFlag.SYNTHETIC]) for horizon in Horizon
     ]
     db_path = output_path / "engine.sqlite3"
     store = SQLiteStore(db_path)
@@ -45,9 +44,7 @@ def run_demo(output: str | Path) -> dict[str, object]:
     for snapshot in snapshots:
         alerts.extend(registry.evaluate(snapshot))
 
-    (output_path / "features.json").write_text(
-        json.dumps(features, indent=2), encoding="utf-8"
-    )
+    (output_path / "features.json").write_text(json.dumps(features, indent=2), encoding="utf-8")
     (output_path / "regime_snapshot.json").write_text(
         json.dumps([snapshot.model_dump(mode="json") for snapshot in snapshots], indent=2),
         encoding="utf-8",

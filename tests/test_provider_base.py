@@ -14,9 +14,7 @@ class StubProvider(MarketDataProvider):
     allowed_hosts = frozenset({"api.test.invalid"})
     allowed_methods = frozenset({"GET", "POST"})
 
-    async def fetch_candles(
-        self, asset: str, interval: str, limit: int = 300
-    ) -> list[Candle]:
+    async def fetch_candles(self, asset: str, interval: str, limit: int = 300) -> list[Candle]:
         return []
 
 
@@ -43,9 +41,7 @@ async def test_request_hashes_raw_payload_and_reuses_safe_transport() -> None:
         assert request.url.host == "api.test.invalid"
         return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
 
-    provider = StubProvider(
-        "https://api.test.invalid", transport=httpx.MockTransport(handler)
-    )
+    provider = StubProvider("https://api.test.invalid", transport=httpx.MockTransport(handler))
     try:
         payload, latency, digest = await provider._request_json("GET", "/health")
     finally:
@@ -115,9 +111,7 @@ async def test_oversized_and_non_json_responses_are_rejected() -> None:
 @pytest.mark.asyncio
 async def test_transport_errors_do_not_leak_query_secrets() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError(
-            "failed api_key=SUPER_SECRET", request=request
-        )
+        raise httpx.ConnectError("failed api_key=SUPER_SECRET", request=request)
 
     provider = StubProvider(
         "https://api.test.invalid",
@@ -126,9 +120,7 @@ async def test_transport_errors_do_not_leak_query_secrets() -> None:
     )
     try:
         with pytest.raises(ProviderError) as exc_info:
-            await provider._request_json(
-                "GET", "/error", params={"api_key": "SUPER_SECRET"}
-            )
+            await provider._request_json("GET", "/error", params={"api_key": "SUPER_SECRET"})
     finally:
         await provider.aclose()
     assert "SUPER_SECRET" not in str(exc_info.value)
@@ -138,9 +130,7 @@ async def test_transport_errors_do_not_leak_query_secrets() -> None:
 async def test_method_and_path_cannot_escape_policy() -> None:
     provider = StubProvider(
         "https://api.test.invalid",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json={})
-        ),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
     )
     try:
         with pytest.raises(ProviderError, match="not allowed"):

@@ -28,13 +28,35 @@ def mock(payload: object, status: int = 200) -> httpx.MockTransport:
 @pytest.mark.parametrize(
     ("factory", "asset", "interval", "bad_limit"),
     [
-        (lambda: BinanceSpotProvider("https://data-api.binance.vision", transport=mock([])), "XRP_USDT", "1h", 0),
-        (lambda: CoinbaseExchangeProvider("https://api.exchange.coinbase.com", transport=mock([])), "XRP_USD", "1h", 301),
-        (lambda: KrakenSpotProvider("https://api.kraken.com", transport=mock({"error": [], "result": {"X": [], "last": 0}})), "XRP_USD", "1h", 721),
+        (
+            lambda: BinanceSpotProvider("https://data-api.binance.vision", transport=mock([])),
+            "XRP_USDT",
+            "1h",
+            0,
+        ),
+        (
+            lambda: CoinbaseExchangeProvider(
+                "https://api.exchange.coinbase.com", transport=mock([])
+            ),
+            "XRP_USD",
+            "1h",
+            301,
+        ),
+        (
+            lambda: KrakenSpotProvider(
+                "https://api.kraken.com",
+                transport=mock({"error": [], "result": {"X": [], "last": 0}}),
+            ),
+            "XRP_USD",
+            "1h",
+            721,
+        ),
     ],
 )
 @pytest.mark.asyncio
-async def test_exchange_adapters_reject_invalid_limits(factory, asset: str, interval: str, bad_limit: int) -> None:
+async def test_exchange_adapters_reject_invalid_limits(
+    factory, asset: str, interval: str, bad_limit: int
+) -> None:
     provider = factory()
     try:
         with pytest.raises(ProviderError, match="limit"):
@@ -46,13 +68,32 @@ async def test_exchange_adapters_reject_invalid_limits(factory, asset: str, inte
 @pytest.mark.parametrize(
     ("factory", "asset", "interval"),
     [
-        (lambda: BinanceSpotProvider("https://data-api.binance.vision", transport=mock([])), "NOPE", "1h"),
-        (lambda: CoinbaseExchangeProvider("https://api.exchange.coinbase.com", transport=mock([])), "NOPE", "1h"),
-        (lambda: KrakenSpotProvider("https://api.kraken.com", transport=mock({"error": [], "result": {"X": [], "last": 0}})), "NOPE", "1h"),
+        (
+            lambda: BinanceSpotProvider("https://data-api.binance.vision", transport=mock([])),
+            "NOPE",
+            "1h",
+        ),
+        (
+            lambda: CoinbaseExchangeProvider(
+                "https://api.exchange.coinbase.com", transport=mock([])
+            ),
+            "NOPE",
+            "1h",
+        ),
+        (
+            lambda: KrakenSpotProvider(
+                "https://api.kraken.com",
+                transport=mock({"error": [], "result": {"X": [], "last": 0}}),
+            ),
+            "NOPE",
+            "1h",
+        ),
     ],
 )
 @pytest.mark.asyncio
-async def test_exchange_adapters_reject_unsupported_assets(factory, asset: str, interval: str) -> None:
+async def test_exchange_adapters_reject_unsupported_assets(
+    factory, asset: str, interval: str
+) -> None:
     provider = factory()
     try:
         with pytest.raises(ProviderError, match="unsupported asset/interval"):
@@ -79,7 +120,17 @@ async def test_binance_rejects_wrong_root_malformed_and_invalid_numeric() -> Non
 @pytest.mark.asyncio
 async def test_binance_skips_open_future_candle() -> None:
     now = datetime.now(UTC)
-    payload = [[int(now.timestamp() * 1000), "1", "1.1", "0.9", "1", "1", int((now + timedelta(hours=1)).timestamp() * 1000)]]
+    payload = [
+        [
+            int(now.timestamp() * 1000),
+            "1",
+            "1.1",
+            "0.9",
+            "1",
+            "1",
+            int((now + timedelta(hours=1)).timestamp() * 1000),
+        ]
+    ]
     provider = BinanceSpotProvider("https://data-api.binance.vision", transport=mock(payload))
     try:
         assert await provider.fetch_candles("XRP_USDT", "1h", 1) == []
@@ -96,7 +147,9 @@ async def test_coinbase_rejects_wrong_root_malformed_and_invalid_numeric() -> No
         ([[0, 0.9, 1.1, "bad", 1.0, 1]], "malformed candle"),
     ]
     for payload, message in payloads:
-        provider = CoinbaseExchangeProvider("https://api.exchange.coinbase.com", transport=mock(payload))
+        provider = CoinbaseExchangeProvider(
+            "https://api.exchange.coinbase.com", transport=mock(payload)
+        )
         try:
             with pytest.raises(ProviderError, match=message):
                 await provider.fetch_candles("XRP_USD", "1h", 1)
@@ -128,7 +181,10 @@ async def test_coinbase_skips_future_candle_and_health_path() -> None:
         ({"error": [], "result": {"A": [], "B": [], "last": 1}}, "ambiguous"),
         ({"error": [], "result": {"A": "bad", "last": 1}}, "ambiguous"),
         ({"error": [], "result": {"A": [[1, 2]], "last": 1}}, "malformed candle"),
-        ({"error": [], "result": {"A": [[0, "bad", "1", "1", "1", "1", "1"]], "last": 1}}, "malformed candle"),
+        (
+            {"error": [], "result": {"A": [[0, "bad", "1", "1", "1", "1", "1"]], "last": 1}},
+            "malformed candle",
+        ),
     ],
 )
 async def test_kraken_rejects_malformed_payloads(payload: object, message: str) -> None:
@@ -143,7 +199,10 @@ async def test_kraken_rejects_malformed_payloads(payload: object, message: str) 
 @pytest.mark.asyncio
 async def test_kraken_skips_future_candle_and_health_path() -> None:
     future = datetime.now(UTC) + timedelta(hours=1)
-    payload = {"error": [], "result": {"A": [[int(future.timestamp()), "1", "1.1", "0.9", "1", "1", "1"]], "last": 0}}
+    payload = {
+        "error": [],
+        "result": {"A": [[int(future.timestamp()), "1", "1.1", "0.9", "1", "1", "1"]], "last": 0},
+    }
     provider = KrakenSpotProvider("https://api.kraken.com", transport=mock(payload))
     try:
         assert await provider.fetch_candles("XRP_USD", "1h", 1) == []
@@ -186,11 +245,13 @@ async def test_fred_rejects_missing_series_wrong_root_and_malformed_observation(
 
 @pytest.mark.asyncio
 async def test_fred_skips_missing_values_and_defaults_realtime_start() -> None:
-    payload = {"observations": [
-        {"date": "2020-01-01", "value": "."},
-        {"date": "2020-01-02", "value": None},
-        {"date": "2020-01-03", "value": "4.0"},
-    ]}
+    payload = {
+        "observations": [
+            {"date": "2020-01-01", "value": "."},
+            {"date": "2020-01-02", "value": None},
+            {"date": "2020-01-03", "value": "4.0"},
+        ]
+    }
     item = FredProvider("x", transport=mock(payload))
     try:
         result = await item.fetch_series("DGS10", start="2020-01-01")
@@ -216,7 +277,9 @@ async def test_xrpl_rejects_malformed_roots_rpc_errors_and_bad_server_info() -> 
         finally:
             await item.aclose()
 
-    item = XRPLProvider("https://s1.ripple.com:51234", transport=mock({"result": {"status": "success", "info": []}}))
+    item = XRPLProvider(
+        "https://s1.ripple.com:51234", transport=mock({"result": {"status": "success", "info": []}})
+    )
     try:
         with pytest.raises(ProviderError, match="server_info payload is malformed"):
             await item.server_metrics()
@@ -235,7 +298,9 @@ async def test_xrpl_health_ok_down_and_fetch_candles_blocked() -> None:
     finally:
         await ok.aclose()
 
-    down = XRPLProvider("https://s1.ripple.com:51234", max_attempts=1, transport=mock({"error": True}, status=503))
+    down = XRPLProvider(
+        "https://s1.ripple.com:51234", max_attempts=1, transport=mock({"error": True}, status=503)
+    )
     try:
         health = await down.health()
         assert health.status == "down"
@@ -257,7 +322,12 @@ async def test_xrpl_health_rejects_unexpected_health_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_xrpl_server_metrics_tolerates_non_mapping_validated_ledger() -> None:
-    payload = {"result": {"status": "success", "info": {"validated_ledger": [], "load_factor": 1, "peers": 2}}}
+    payload = {
+        "result": {
+            "status": "success",
+            "info": {"validated_ledger": [], "load_factor": 1, "peers": 2},
+        }
+    }
     item = XRPLProvider("https://s1.ripple.com:51234", transport=mock(payload))
     try:
         metrics = await item.server_metrics()
