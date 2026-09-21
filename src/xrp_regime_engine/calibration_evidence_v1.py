@@ -164,9 +164,7 @@ def join_resolved_predictions(
                 resolved_at=outcome.resolved_at,
             )
         )
-    ordered = tuple(
-        sorted(records, key=lambda item: (item.prediction_time, item.prediction_id))
-    )
+    ordered = tuple(sorted(records, key=lambda item: (item.prediction_time, item.prediction_id)))
     horizons = {item.horizon for item in ordered}
     events = {item.event_key for item in ordered}
     if len(horizons) != 1 or len(events) != 1:
@@ -213,10 +211,7 @@ def _logistic_recalibration(
         for value in x:
             linear = max(min(intercept + slope * value, 35.0), -35.0)
             probabilities.append(1.0 / (1.0 + math.exp(-linear)))
-        g0 = sum(
-            actual - probability
-            for actual, probability in zip(y, probabilities, strict=True)
-        )
+        g0 = sum(actual - probability for actual, probability in zip(y, probabilities, strict=True))
         g1 = sum(
             (actual - probability) * value
             for actual, probability, value in zip(y, probabilities, x, strict=True)
@@ -224,9 +219,7 @@ def _logistic_recalibration(
         w = [probability * (1 - probability) for probability in probabilities]
         h00 = sum(w)
         h01 = sum(weight * value for weight, value in zip(w, x, strict=True))
-        h11 = sum(
-            weight * value * value for weight, value in zip(w, x, strict=True)
-        )
+        h11 = sum(weight * value * value for weight, value in zip(w, x, strict=True))
         determinant = h00 * h11 - h01 * h01
         if determinant <= 1e-15:
             return None, None
@@ -253,12 +246,8 @@ def build_calibration_evidence(
     if not 0 < epsilon < 0.5:
         raise ValueError("epsilon must be within (0, 0.5)")
     if reference_base_rate is not None:
-        reference_base_rate = _bounded_probability(
-            reference_base_rate, "reference_base_rate"
-        )
-    ordered = tuple(
-        sorted(records, key=lambda item: (item.prediction_time, item.prediction_id))
-    )
+        reference_base_rate = _bounded_probability(reference_base_rate, "reference_base_rate")
+    ordered = tuple(sorted(records, key=lambda item: (item.prediction_time, item.prediction_id)))
     horizons = {item.horizon for item in ordered}
     events = {item.event_key for item in ordered}
     if len(horizons) != 1 or len(events) != 1:
@@ -269,13 +258,10 @@ def build_calibration_evidence(
         _bounded_probability(item.raw_score, "raw_score")
     y = [1.0 if item.actual else 0.0 for item in ordered]
     p = [item.raw_score for item in ordered]
-    brier = sum(
-        (score - actual) ** 2 for score, actual in zip(p, y, strict=True)
-    ) / len(p)
+    brier = sum((score - actual) ** 2 for score, actual in zip(p, y, strict=True)) / len(p)
     log_loss = -sum(
         actual * math.log(min(max(score, epsilon), 1 - epsilon))
-        + (1 - actual)
-        * math.log(1 - min(max(score, epsilon), 1 - epsilon))
+        + (1 - actual) * math.log(1 - min(max(score, epsilon), 1 - epsilon))
         for score, actual in zip(p, y, strict=True)
     ) / len(p)
 
@@ -288,8 +274,7 @@ def build_calibration_evidence(
         members = [
             (score, actual)
             for score, actual in zip(p, y, strict=True)
-            if (lower <= score < upper)
-            or (index == n_bins - 1 and score == 1.0)
+            if (lower <= score < upper) or (index == n_bins - 1 and score == 1.0)
         ]
         if not members:
             bins.append(ReliabilityBin(lower, upper, 0, None, None, None))
@@ -313,9 +298,7 @@ def build_calibration_evidence(
     intercept, slope = _logistic_recalibration(ordered, epsilon=epsilon)
     reference_brier = None
     if reference_base_rate is not None:
-        reference_brier = sum(
-            (reference_base_rate - actual) ** 2 for actual in y
-        ) / len(y)
+        reference_brier = sum((reference_base_rate - actual) ** 2 for actual in y) / len(y)
 
     material: dict[str, object] = {
         "horizon": ordered[0].horizon.value,
