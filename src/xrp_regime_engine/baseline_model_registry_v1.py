@@ -48,9 +48,7 @@ class BaselineModelRegistry:
         event_key: str,
     ) -> tuple[BaselineRegistryEntry, ...]:
         return tuple(
-            item
-            for item in self.entries
-            if item.horizon is horizon and item.event_key == event_key
+            item for item in self.entries if item.horizon is horizon and item.event_key == event_key
         )
 
 
@@ -148,20 +146,12 @@ def build_baseline_model_registry(
     )
     ordered_challengers = tuple(sorted(challenger_keys))
     reference_count = sum(
-        1
-        for item in ordered_entries
-        if item.state is BaselineSkillState.REFERENCE_BASELINE
+        1 for item in ordered_entries if item.state is BaselineSkillState.REFERENCE_BASELINE
     )
     eligible_count = sum(
-        1
-        for item in ordered_entries
-        if item.state is BaselineSkillState.ELIGIBLE_CHALLENGER
+        1 for item in ordered_entries if item.state is BaselineSkillState.ELIGIBLE_CHALLENGER
     )
-    rejected_count = sum(
-        1
-        for item in ordered_entries
-        if item.state is BaselineSkillState.REJECTED
-    )
+    rejected_count = sum(1 for item in ordered_entries if item.state is BaselineSkillState.REJECTED)
     material = {
         "matrix_id": matrix.matrix_id,
         "entries": [
