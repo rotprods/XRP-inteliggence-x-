@@ -7,7 +7,7 @@ from xrp_regime_engine.derivatives import FundingState, OpenInterestState
 from xrp_regime_engine.order_flow import OrderFlowState
 from xrp_regime_engine.temporal_alignment import build_aligned_temporal_window
 from xrp_regime_engine.temporal_flow import build_temporal_window
-from xrp_regime_engine.trade_attribution import reconcile_depth_with_order_flow
+from xrp_regime_engine.trade_attribution import _complete_provenance
 
 T0 = datetime(2026, 9, 21, 7, 0, tzinfo=UTC)
 OBSERVED = T0 + timedelta(seconds=8)
@@ -111,8 +111,13 @@ def test_temporal_window_empty_input_returns_no_data() -> None:
 
 def test_trade_attribution_rejects_reversed_observed_provenance_envelope() -> None:
     with pytest.raises(ValueError, match="observed envelope is reversed"):
-        reconcile_depth_with_order_flow(
-            _depth(first_observed_at=OBSERVED + timedelta(seconds=1)),
-            _flow(),
-            prediction_time=PREDICTION,
+        _complete_provenance(
+            declared_complete=True,
+            first_observed_at=OBSERVED + timedelta(seconds=1),
+            last_observed_at=OBSERVED,
+            first_available_at=OBSERVED + timedelta(seconds=2),
+            last_available_at=OBSERVED + timedelta(seconds=2),
+            first_fetched_at=OBSERVED + timedelta(seconds=3),
+            last_fetched_at=OBSERVED + timedelta(seconds=3),
+            field="probe",
         )
