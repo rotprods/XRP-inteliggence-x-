@@ -447,3 +447,96 @@ def test_completed_empty_dataset_fails_when_manifest_has_no_partition(tmp_path: 
         BackfillRunnerV2(store).run(adapter, window())
     checkpoint = store.load_checkpoint(BackfillRunnerV2.job_key(adapter, window()))
     assert checkpoint is not None and checkpoint.completed is True
+
+
+def test_defensive_incomplete_page_lost_cursor_fails_closed(tmp_path: Path) -> None:
+    class CorruptCursorAdapter(TwoPageAdapter):
+        def fetch_page(
+            self,
+            window: BackfillWindowV2,
+            cursor: dict[str, object],
+        ) -> BackfillPageV2:
+            del window, cursor
+            raw, receipt, _ = page_material("corrupt-cursor")
+            page = BackfillPageV2(
+                raw_payload=raw,
+                receipt=receipt,
+                observations=(),
+                partition_key=None,
+                next_cursor={"page": 2},
+                completed=False,
+            )
+            object.__setattr__(page, "next_cursor", None)
+            return page
+
+    with pytest.raises(RuntimeError, match="lost next_cursor"):
+        BackfillRunnerV2(HistoricalEvidenceStoreV2(tmp_path)).run(
+            CorruptCursorAdapter(),
+            window(),
+        )
+
+
+def test_defensive_observation_page_lost_partition_fails_closed(tmp_path: Path) -> None:
+    class CorruptPartitionAdapter(TwoPageAdapter):
+        def fetch_page(
+            self,
+            window: BackfillWindowV2,
+            cursor: dict[str, object],
+        ) -> BackfillPageV2:
+            del window, cursor
+            raw, receipt, obs = page_material("corrupt-partition")
+            page = BackfillPageV2(
+                raw_payload=raw,
+                receipt=receipt,
+                observations=(obs,),
+                partition_key="date=2026-01-02",
+                next_cursor=None,
+                completed=True,
+            )
+            object.__setattr__(page, "partition_key", None)
+            return page
+
+    with pytest.raises(RuntimeError, match="lost partition_key"):
+        BackfillRunnerV2(HistoricalEvidenceStoreV2(tmp_path)).run(
+            CorruptPartitionAdapter(),
+            window(),
+        )
+
+
+def test_defensive_completed_run_without_receipt_timestamp_fails_closed() -> None:
+    class CorruptReceiptTimeAdapter(TwoPageAdapter):
+        def fetch_page(
+            self,
+            window: BackfillWindowV2,
+            cursor: dict[str, object],
+        ) -> BackfillPageV2:
+            del window, cursor
+            raw, receipt, _ = page_material("corrupt-receipt-time")
+            page = BackfillPageV2(
+                raw_payload=raw,
+                receipt=receipt,
+                observations=(),
+                partition_key=None,
+                next_cursor=None,
+                completed=True,
+            )
+            object.__setattr__(receipt, "fetched_at", None)
+            return page
+
+    class MinimalStore:
+        def load_checkpoint(self, key: str) -> None:
+            del key
+            return None
+
+        def record_fetch(self, raw_payload: bytes, receipt: FetchReceipt) -> None:
+            del raw_payload, receipt
+
+        def save_checkpoint(self, **kwargs: object) -> None:
+            del kwargs
+
+        def finalize_manifest(self, **kwargs: object) -> None:
+            del kwargs
+            raise AssertionError("finalize_manifest must not be reached")
+
+    with pytest.raises(RuntimeError, match="no receipt timestamp"):
+        BackfillRunnerV2(MinimalStore()).run(CorruptReceiptTimeAdapter(), window())
