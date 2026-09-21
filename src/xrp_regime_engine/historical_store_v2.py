@@ -105,9 +105,7 @@ def _observation_payload(observation: HistoricalObservation) -> dict[str, object
         "values": dict(observation.values),
         "availability_precision": observation.availability_precision.value,
         "availability_policy": observation.availability_policy,
-        "available_at": observation.available_at.isoformat()
-        if observation.available_at
-        else None,
+        "available_at": observation.available_at.isoformat() if observation.available_at else None,
         "available_date": observation.available_date.isoformat()
         if observation.available_date
         else None,
