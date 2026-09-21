@@ -153,7 +153,6 @@ def test_registry_rejects_challenger_without_eligible_skill() -> None:
         build_baseline_model_registry(replace(source, cells=(bad_cell,)))
 
 
-
 def test_registry_rejects_holdout_execution_and_dataset_identity_corruption() -> None:
     source = matrix()
 
@@ -188,6 +187,4 @@ def test_registry_rejects_duplicate_skill_key_inside_run() -> None:
         skills=(duplicated_skill, duplicated_skill),
     )
     with pytest.raises(ValueError, match="duplicate registry entry"):
-        build_baseline_model_registry(
-            replace(source, runs=(bad_run,))
-        )
+        build_baseline_model_registry(replace(source, runs=(bad_run,)))
