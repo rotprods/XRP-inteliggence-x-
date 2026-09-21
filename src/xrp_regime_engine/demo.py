@@ -6,7 +6,6 @@ from types import MappingProxyType
 import numpy as np
 import pandas as pd
 
-
 DEMO_END = datetime(2026, 8, 24, tzinfo=UTC)
 DEMO_SUPPLEMENTAL_FEATURES = MappingProxyType(
     {
@@ -73,9 +72,7 @@ def generate_demo_frame(
     frame["ETH_USD"] = 1_300 * np.exp(np.cumsum(eth_ret))
     frame["XRP_USD"] = 0.35 * np.exp(np.cumsum(xrp_ret))
     frame["BTC_DOMINANCE"] = (
-        52
-        + np.cumsum(rng.normal(0, 0.08, periods))
-        - np.linspace(0, 2.5, periods)
+        52 + np.cumsum(rng.normal(0, 0.08, periods)) - np.linspace(0, 2.5, periods)
     )
     frame["NDX"] = 11_000 * np.exp(
         np.cumsum(0.7 * market + 0.5 * risk + rng.normal(0, 0.006, periods))
@@ -95,9 +92,7 @@ def generate_demo_frame(
         0.5,
         8.0,
     )
-    frame["GOLD"] = 1_800 * np.exp(
-        np.cumsum(-0.04 * macro + rng.normal(0, 0.006, periods))
-    )
+    frame["GOLD"] = 1_800 * np.exp(np.cumsum(-0.04 * macro + rng.normal(0, 0.006, periods)))
     frame["WTI"] = 78 * np.exp(np.cumsum(rng.normal(0, 0.012, periods)))
     frame["GASOLINE"] = 2.9 * np.exp(np.cumsum(rng.normal(0, 0.011, periods)))
     frame["NATGAS"] = 3.5 * np.exp(np.cumsum(rng.normal(0, 0.025, periods)))

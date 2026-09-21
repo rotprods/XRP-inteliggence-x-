@@ -11,17 +11,16 @@ def _integer(root: ET.Element, key: str) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Enforce mutation-test quality from mutmut JUnit XML")
+    parser = argparse.ArgumentParser(
+        description="Enforce mutation-test quality from mutmut JUnit XML"
+    )
     parser.add_argument("junit_xml", type=Path, nargs="?", default=Path("quality/mutmut.xml"))
     parser.add_argument("--threshold", type=float, default=90.0)
     parser.add_argument("--report", type=Path, default=Path("quality/mutation_policy.json"))
     args = parser.parse_args()
 
     root = ET.parse(args.junit_xml).getroot()
-    if root.tag == "testsuite":
-        suites = [root]
-    else:
-        suites = root.findall(".//testsuite")
+    suites = [root] if root.tag == "testsuite" else root.findall(".//testsuite")
     if not suites:
         raise SystemExit("mutmut JUnit XML contains no testsuite")
 

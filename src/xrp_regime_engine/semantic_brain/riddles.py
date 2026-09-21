@@ -31,17 +31,25 @@ class FrozenPrediction(BaseModel):
     quality_flags: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")
-    def enforce_ex_ante_freeze(self) -> "FrozenPrediction":
+    def enforce_ex_ante_freeze(self) -> FrozenPrediction:
         if self.frozen_at < self.published_at:
             raise ValueError("frozen_at cannot precede publication")
         if self.frozen_at >= self.horizon_end:
             raise ValueError("interpretation must be frozen before outcome horizon")
         return self
 
-    def resolve(self, outcome: PredictionResolution, at: datetime, evidence_ids: list[str]) -> "FrozenPrediction":
+    def resolve(
+        self,
+        outcome: PredictionResolution,
+        at: datetime,
+        evidence_ids: list[str],
+    ) -> FrozenPrediction:
         if outcome == PredictionResolution.OPEN:
             raise ValueError("resolution must close the prediction")
-        if at < self.horizon_end and outcome in {PredictionResolution.HIT, PredictionResolution.MISS}:
+        if at < self.horizon_end and outcome in {
+            PredictionResolution.HIT,
+            PredictionResolution.MISS,
+        }:
             raise ValueError("cannot score HIT/MISS before horizon expiry")
         self.resolution = outcome
         self.resolved_at = at

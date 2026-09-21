@@ -6,7 +6,6 @@ import re
 import subprocess
 from pathlib import Path
 
-
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -29,7 +28,9 @@ def changed_lines(diff: str) -> dict[str, set[int]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Require coverage on every changed executable line")
+    parser = argparse.ArgumentParser(
+        description="Require coverage on every changed executable line"
+    )
     parser.add_argument("coverage_json", type=Path, nargs="?", default=Path("coverage.json"))
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--threshold", type=float, default=100.0)

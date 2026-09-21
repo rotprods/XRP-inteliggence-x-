@@ -12,6 +12,7 @@ from xrp_regime_engine.storage import SQLiteStore
 def _client_for_database(db: Path, monkeypatch) -> TestClient:
     monkeypatch.setenv("XRP_ENGINE_DB_PATH", str(db))
     import importlib
+
     import xrp_regime_engine.api as api_module
 
     importlib.reload(api_module)

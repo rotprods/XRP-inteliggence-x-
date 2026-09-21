@@ -2,7 +2,6 @@ from typer.testing import CliRunner
 
 from xrp_regime_engine.cli import app
 
-
 runner = CliRunner()
 
 

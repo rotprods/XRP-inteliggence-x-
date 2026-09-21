@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -33,9 +32,7 @@ class Settings:
         default_factory=lambda: _env("BINANCE_BASE_URL", "https://data-api.binance.vision")
     )
     coinbase_base_url: str = field(
-        default_factory=lambda: _env(
-            "COINBASE_BASE_URL", "https://api.exchange.coinbase.com"
-        )
+        default_factory=lambda: _env("COINBASE_BASE_URL", "https://api.exchange.coinbase.com")
     )
     kraken_base_url: str = field(
         default_factory=lambda: _env("KRAKEN_BASE_URL", "https://api.kraken.com")

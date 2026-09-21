@@ -1,8 +1,13 @@
 import json
 from pathlib import Path
 
-from xrp_regime_engine.models import AssetObservation, Candle, ProviderHealth, Provenance, RegimeSnapshot
-
+from xrp_regime_engine.models import (
+    AssetObservation,
+    Candle,
+    Provenance,
+    ProviderHealth,
+    RegimeSnapshot,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {

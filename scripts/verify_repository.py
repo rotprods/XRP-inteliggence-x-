@@ -9,7 +9,6 @@ from pathlib import Path
 
 from build_manifest import render_manifest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_SOURCE_TOKENS = {
     "execute_trade",
@@ -35,9 +34,7 @@ GENERATED_PARTS = {
     "dist-b",
 }
 RUNTIME_SUFFIXES = {".pyc", ".pyo", ".sqlite3", ".db"}
-ACTION_REF_PATTERN = re.compile(
-    r"(?m)^\s*uses:\s*(?P<action>[^@\s]+)@(?P<ref>[^\s#]+)(?:\s+#.*)?$"
-)
+ACTION_REF_PATTERN = re.compile(r"(?m)^\s*uses:\s*(?P<action>[^@\s]+)@(?P<ref>[^\s#]+)(?:\s+#.*)?$")
 
 
 def _git_visible_paths(root: Path) -> list[Path] | None:
@@ -93,7 +90,6 @@ def verify(root: Path = ROOT) -> dict[str, object]:
             continue
         relative = path.relative_to(root)
         if any(part in GENERATED_PARTS for part in relative.parts):
-            # Generated/ignored runtime state may exist locally, but it may not be Git-visible.
             visible = _git_visible_paths(root)
             if visible is not None and path in visible:
                 errors.append(f"generated artifact tracked or unignored in source tree: {relative}")
@@ -179,7 +175,9 @@ def verify(root: Path = ROOT) -> dict[str, object]:
         "workflow_count": len(workflows),
         "manifest_ok": manifest_ok,
         "read_only_boundary": True,
-        "verification_scope": "git_visible" if _git_visible_paths(root) is not None else "filesystem",
+        "verification_scope": "git_visible"
+        if _git_visible_paths(root) is not None
+        else "filesystem",
         "cost_guardrail": {
             "workflow_count": len(workflows),
             "standard_runner_only": True,

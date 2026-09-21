@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from statistics import pstdev
-from typing import Iterable
 
 from xrp_regime_engine.models import (
     ComponentScores,
@@ -14,7 +14,6 @@ from xrp_regime_engine.models import (
     RegimeLabel,
     RegimeSnapshot,
 )
-
 
 FeatureMap = dict[str, float | None]
 
@@ -183,9 +182,7 @@ def _derivatives_health(features: FeatureMap) -> tuple[float, float]:
     liquidation_impulse = _feature(features, "liquidation_impulse")
     values: list[float | None] = [
         None if funding is None else _clip(100 * (1 - min(abs(funding) / 2.5, 1.0))),
-        None
-        if oi_divergence is None
-        else _clip(100 * (1 - min(abs(oi_divergence) / 2.0, 1.0))),
+        None if oi_divergence is None else _clip(100 * (1 - min(abs(oi_divergence) / 2.0, 1.0))),
         None if liquidation_impulse is None else _scale(liquidation_impulse, width=1.0),
     ]
     return _component(values)
@@ -265,9 +262,7 @@ def score_regime(
     )
     bull_score = _clip(bull_score)
 
-    directional_coverage = sum(
-        base_weights[key] * component_coverage[key] for key in base_weights
-    )
+    directional_coverage = sum(base_weights[key] * component_coverage[key] for key in base_weights)
     data_confidence = _clip01(min(quality_confidence, directional_coverage))
 
     active_component_scores = [
@@ -346,11 +341,7 @@ def score_regime(
         "XRPL activity": (xrpl, xrpl_coverage),
     }
     ranked_drivers = sorted(
-        (
-            (name, score)
-            for name, (score, coverage) in driver_candidates.items()
-            if coverage > 0
-        ),
+        ((name, score) for name, (score, coverage) in driver_candidates.items() if coverage > 0),
         key=lambda item: abs(item[1] - 50),
         reverse=True,
     )

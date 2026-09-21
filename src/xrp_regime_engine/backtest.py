@@ -51,7 +51,7 @@ def _validate_available_at(
     if normalized.isna().any():
         raise ValueError("available_at contains missing or invalid timestamps")
     observed_utc = index.tz_convert("UTC")
-    if (normalized.array < observed_utc.array).any():
+    if bool(np.any(normalized.to_numpy() < observed_utc.to_numpy())):
         raise ValueError("available_at cannot precede observed_at")
     return pd.Series(normalized.array, index=index, name="available_at")
 

@@ -10,7 +10,9 @@ from pathlib import Path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Replay the critical hermetic suite under fixed randomized seeds")
+    parser = argparse.ArgumentParser(
+        description="Replay the critical hermetic suite under fixed randomized seeds"
+    )
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--output", type=Path, default=Path("quality/flake_gate.json"))
     parser.add_argument("--selection", default="not live and not slow")

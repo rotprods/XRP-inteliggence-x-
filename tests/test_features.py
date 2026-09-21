@@ -8,9 +8,7 @@ from xrp_regime_engine.features import _rsi, compute_features
 
 
 def test_features_are_finite_when_inputs_exist() -> None:
-    features = compute_features(
-        generate_demo_frame(), supplemental=DEMO_SUPPLEMENTAL_FEATURES
-    )
+    features = compute_features(generate_demo_frame(), supplemental=DEMO_SUPPLEMENTAL_FEATURES)
     assert all(value is None or math.isfinite(value) for value in features.values())
     assert features["xrp_rsi_14"] is not None
     assert 0 <= features["xrp_rsi_14"] <= 100

@@ -118,7 +118,7 @@ class MarketDataProvider(ABC):
             )
         except OSError as exc:
             raise RetryableProviderError("DNS resolution failed") from exc
-        addresses = tuple(sorted({item[4][0] for item in results}))
+        addresses = tuple(sorted({str(item[4][0]) for item in results}))
         if not addresses:
             raise RetryableProviderError("DNS resolution returned no addresses")
         for address in addresses:

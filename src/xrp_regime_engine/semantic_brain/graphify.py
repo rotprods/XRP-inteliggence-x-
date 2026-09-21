@@ -66,8 +66,6 @@ class ClaimLedger:
             primary = {SourceTier.T0_PRIMARY_MACHINE, SourceTier.T1_PRIMARY_DOCUMENT}
             if not source_tiers.intersection(primary):
                 raise ValueError("FACT requires primary evidence")
-            if source_tiers == {SourceTier.T4_SOCIAL_CLAIM}:
-                raise ValueError("social repetition cannot promote truth")
             if claim.contradicts:
                 raise ValueError("unresolved contradiction blocks FACT promotion")
         claim.status = target

@@ -2,21 +2,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 from xrp_regime_engine.models import ProviderHealth, RegimeSnapshot
 
-
 SCHEMA_VERSION = 1
-SCHEMA = f"""
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_metadata (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-INSERT INTO schema_metadata(key, value) VALUES ('schema_version', '{SCHEMA_VERSION}')
-ON CONFLICT(key) DO UPDATE SET value=excluded.value;
 
 CREATE TABLE IF NOT EXISTS regime_snapshots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +60,11 @@ class SQLiteStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as conn:
             conn.executescript(SCHEMA)
+            conn.execute(
+                """INSERT INTO schema_metadata(key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+                ("schema_version", str(SCHEMA_VERSION)),
+            )
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -161,9 +163,7 @@ class SQLiteStore:
                 ),
             )
 
-    def latest_snapshot(
-        self, asset: str = "XRP", horizon: str = "1d"
-    ) -> RegimeSnapshot | None:
+    def latest_snapshot(self, asset: str = "XRP", horizon: str = "1d") -> RegimeSnapshot | None:
         with self.connection() as conn:
             row = conn.execute(
                 """SELECT payload_json FROM regime_snapshots

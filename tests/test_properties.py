@@ -4,12 +4,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-hypothesis = pytest.importorskip("hypothesis")
-from hypothesis import given, strategies as st  # type: ignore[import-not-found]
-
 from xrp_regime_engine.consensus import consensus_close
 from xrp_regime_engine.models import Candle, Horizon, Provenance
 from xrp_regime_engine.regime import score_regime
+
+hypothesis = pytest.importorskip("hypothesis")
+given = hypothesis.given
+st = hypothesis.strategies
 
 pytestmark = [pytest.mark.property, pytest.mark.unit]
 NOW = datetime(2026, 8, 28, 9, tzinfo=UTC)
@@ -65,7 +66,11 @@ def test_provider_permutation_preserves_consensus(center: float, delta: float) -
     crypto=st.floats(min_value=-1, max_value=1, allow_nan=False, allow_infinity=False),
     xrp=st.floats(min_value=-1, max_value=1, allow_nan=False, allow_infinity=False),
 )
-def test_regime_scores_always_respect_numeric_bounds(macro: float, crypto: float, xrp: float) -> None:
+def test_regime_scores_always_respect_numeric_bounds(
+    macro: float,
+    crypto: float,
+    xrp: float,
+) -> None:
     features = {
         "feature_cadence_seconds": 86400.0,
         "provider_agreement": 1.0,
@@ -102,7 +107,13 @@ def test_regime_scores_always_respect_numeric_bounds(macro: float, crypto: float
     assert 0 <= snapshot.directional_conviction <= 1
 
 
-@given(st.lists(st.floats(min_value=0.1, max_value=10, allow_nan=False, allow_infinity=False), min_size=2, max_size=6))
+@given(
+    st.lists(
+        st.floats(min_value=0.1, max_value=10, allow_nan=False, allow_infinity=False),
+        min_size=2,
+        max_size=6,
+    )
+)
 def test_duplicate_provider_cannot_inflate_independent_coverage(prices: list[float]) -> None:
     candles = [candle("same-provider", value) for value in prices]
     result = consensus_close(candles, now=NOW)
@@ -112,14 +123,32 @@ def test_duplicate_provider_cannot_inflate_independent_coverage(prices: list[flo
 
 
 @given(
-    open_price=st.floats(min_value=0.0001, max_value=1_000_000, allow_nan=False, allow_infinity=False),
-    close_ratio=st.floats(min_value=0.5, max_value=1.5, allow_nan=False, allow_infinity=False),
-    padding=st.floats(min_value=0.0, max_value=0.25, allow_nan=False, allow_infinity=False),
+    open_price=st.floats(
+        min_value=0.0001,
+        max_value=1_000_000,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+    close_ratio=st.floats(
+        min_value=0.5,
+        max_value=1.5,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+    padding=st.floats(
+        min_value=0.0,
+        max_value=0.25,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
 )
-def test_valid_ohlc_geometry_round_trips(open_price: float, close_ratio: float, padding: float) -> None:
+def test_valid_ohlc_geometry_round_trips(
+    open_price: float,
+    close_ratio: float,
+    padding: float,
+) -> None:
     close_price = open_price * close_ratio
     low = min(open_price, close_price) * (1 - padding)
-    # Keep strict positivity even when Hypothesis picks padding very close to one.
     low = max(low, min(open_price, close_price) * 0.001)
     high = max(open_price, close_price) * (1 + padding)
     item = Candle(
@@ -160,9 +189,17 @@ def test_consensus_never_counts_duplicate_provider_as_independent(prices: list[f
 
 @given(
     future_seconds=st.integers(min_value=1, max_value=86_400),
-    price=st.floats(min_value=0.1, max_value=1000, allow_nan=False, allow_infinity=False),
+    price=st.floats(
+        min_value=0.1,
+        max_value=1000,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
 )
-def test_future_candle_can_never_produce_valid_consensus(future_seconds: int, price: float) -> None:
+def test_future_candle_can_never_produce_valid_consensus(
+    future_seconds: int,
+    price: float,
+) -> None:
     future = NOW + timedelta(seconds=future_seconds)
     future_candle = Candle(
         asset="XRP_USD",
@@ -187,7 +224,12 @@ def test_future_candle_can_never_produce_valid_consensus(future_seconds: int, pr
 
 
 @given(
-    quality=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+    quality=st.floats(
+        min_value=0.0,
+        max_value=1.0,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
 )
 def test_data_quality_changes_confidence_not_directional_score(quality: float) -> None:
     base = {

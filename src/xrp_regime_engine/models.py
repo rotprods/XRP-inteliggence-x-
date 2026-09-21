@@ -8,7 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -280,9 +279,9 @@ class RegimeSnapshot(StrictModel):
     @field_validator("policy_digest", "feature_hash")
     @classmethod
     def validate_digest(cls, value: str, info: Any) -> str:
-        # The field type is non-optional; Pydantic rejects None before this validator.
         validated = _sha256_or_none(value, info.field_name)
-        assert validated is not None
+        if validated is None:
+            raise ValueError(f"{info.field_name} is required")
         return validated
 
     @field_validator("component_coverage")

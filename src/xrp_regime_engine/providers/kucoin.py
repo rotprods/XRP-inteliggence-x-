@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from xrp_regime_engine.models import Candle, ProviderHealth, Provenance
+from xrp_regime_engine.models import Candle, Provenance, ProviderHealth
 from xrp_regime_engine.providers.base import MarketDataProvider, ProviderError
 
 
