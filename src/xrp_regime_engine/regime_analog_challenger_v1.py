@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import StrEnum
 from hashlib import sha256
+from typing import cast
 
 from xrp_regime_engine.baseline_models_v1 import BaselineKind, binary_event_actual
 from xrp_regime_engine.baseline_oos_factory_v1 import (
@@ -29,6 +30,8 @@ from xrp_regime_engine.historical_analog_v1 import (
 )
 from xrp_regime_engine.historical_features_v1 import HistoricalFeatureRow
 from xrp_regime_engine.oos_predictions_v1 import (
+    FoldPlanLike,
+    FutureOutcomeLabelLike,
     OOSPrediction,
     ResolvedOOSOutcome,
     resolve_oos_outcome,
@@ -376,11 +379,11 @@ def run_regime_analog_oos_challenger(
                 training_states,
                 config=selected_policy.analog_config,
             )
-            reasons: list[str] = []
+            suppression_reasons: list[str] = []
             sensitivity_report_id: str | None = None
             if analog_report.status is not AnalogSearchStatus.READY:
-                reasons.extend(analog_report.reasons)
-            if not reasons and selected_policy.require_stable_sensitivity:
+                suppression_reasons.extend(analog_report.reasons)
+            if not suppression_reasons and selected_policy.require_stable_sensitivity:
                 sensitivity = run_analog_sensitivity(
                     query_state,
                     training_states,
@@ -395,9 +398,9 @@ def run_regime_analog_oos_challenger(
                 )
                 sensitivity_report_id = sensitivity.report_id
                 if not sensitivity.stable:
-                    reasons.extend(sensitivity.reasons)
+                    suppression_reasons.extend(sensitivity.reasons)
 
-            if reasons:
+            if suppression_reasons:
                 suppressions.append(
                     AnalogSuppression(
                         fold_id=fold.fold_id,
@@ -405,7 +408,7 @@ def run_regime_analog_oos_challenger(
                         query_state_id=query_state.state_id,
                         analog_report_id=analog_report.report_id,
                         sensitivity_report_id=sensitivity_report_id,
-                        reasons=tuple(sorted(set(reasons))),
+                        reasons=tuple(sorted(set(suppression_reasons))),
                     )
                 )
                 continue
@@ -418,7 +421,7 @@ def run_regime_analog_oos_challenger(
                 prior_strength=selected_policy.prior_strength,
             )
             prediction = OOSPrediction.build(
-                fold=fold,
+                fold=cast(FoldPlanLike, fold),
                 feature_row_id=row.feature.feature_row_id,
                 prediction_time=row.feature.prediction_time,
                 horizon=row.feature.horizon,
@@ -431,7 +434,10 @@ def run_regime_analog_oos_challenger(
                 source_snapshot_ids=row.feature.source_snapshot_ids,
                 raw_score=score,
             )
-            outcome = resolve_oos_outcome(prediction, row.label)
+            outcome = resolve_oos_outcome(
+                prediction,
+                cast(FutureOutcomeLabelLike, row.label),
+            )
             predictions.append(prediction)
             outcomes.append(outcome)
             lineages.append(
