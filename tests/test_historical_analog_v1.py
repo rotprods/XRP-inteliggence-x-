@@ -152,10 +152,7 @@ def test_provider_filter_same_regime_and_lookback_are_explicit() -> None:
         ),
     )
     assert provider_report.status is AnalogSearchStatus.READY
-    assert all(
-        item.provider_universe_version == "providers-v2"
-        for item in provider_report.matches
-    )
+    assert all(item.provider_universe_version == "providers-v2" for item in provider_report.matches)
 
     same_regime = search_historical_analogs(
         query,
