@@ -319,3 +319,18 @@ def test_skill_policy_validation() -> None:
         BaselineSkillPolicy(min_oos_predictions=0)
     with pytest.raises(ValueError, match="negative"):
         BaselineSkillPolicy(min_brier_improvement=-1)
+
+
+
+def test_factory_requires_content_addressed_dataset_version() -> None:
+    features, labels, _, folds = dataset(8)
+    with pytest.raises(ValueError, match="dataset_version_id"):
+        run_baseline_oos_factory(
+            dataset_version_id="bad",
+            features=features,
+            labels=labels,
+            folds=folds,
+            event_key="return_gt_0",
+            feature_keys=("market.signal",),
+            momentum_feature_key="market.signal",
+        )
