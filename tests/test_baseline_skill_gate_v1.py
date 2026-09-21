@@ -25,7 +25,6 @@ from xrp_regime_engine.historical_contract import EligibilityClass
 from xrp_regime_engine.historical_features_v1 import HistoricalFeatureRow
 from xrp_regime_engine.research_horizon import ResearchHorizon, horizon_end_at
 from xrp_regime_engine.walk_forward_v1 import (
-    LabeledFeatureRow,
     WalkForwardConfig,
     build_walk_forward_folds,
     join_labeled_rows,
