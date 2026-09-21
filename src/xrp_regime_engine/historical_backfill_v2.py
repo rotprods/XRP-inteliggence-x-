@@ -219,7 +219,8 @@ class BackfillRunnerV2:
                     raise RuntimeError("backfill exceeded maximum consecutive empty pages")
 
             if not page.completed:
-                assert page.next_cursor is not None
+                if page.next_cursor is None:
+                    raise RuntimeError("validated incomplete page lost next_cursor")
                 next_cursor_key = _canonical_cursor(page.next_cursor)
                 if next_cursor_key == cursor_key or next_cursor_key in seen_cursors:
                     raise RuntimeError("backfill adapter made no forward cursor progress")
@@ -228,7 +229,8 @@ class BackfillRunnerV2:
                 next_cursor = {"completed": True}
 
             if page.observations:
-                assert page.partition_key is not None
+                if page.partition_key is None:
+                    raise RuntimeError("validated observation page lost partition_key")
                 self.store.persist_partition_then_checkpoint(
                     dataset=adapter.dataset,
                     partition_key=page.partition_key,
@@ -250,7 +252,8 @@ class BackfillRunnerV2:
             if not completed:
                 cursor = next_cursor
 
-        assert final_receipt_time is not None
+        if final_receipt_time is None:
+            raise RuntimeError("completed backfill has no receipt timestamp")
         manifest = self.store.finalize_manifest(
             dataset=adapter.dataset,
             schema_version=adapter.schema_version,
