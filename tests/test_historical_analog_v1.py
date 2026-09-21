@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
@@ -335,3 +336,106 @@ def test_sensitivity_threshold_validation() -> None:
             base_config=base,
             min_top_regime_agreement=-1,
         )
+
+
+
+def test_self_state_same_regime_filter_and_no_signal_branches() -> None:
+    query = state(40)
+    different = replace(
+        state(20),
+        state_id="regime-state:sha256:" + "e" * 64,
+        state_sha256="e" * 64,
+        regime=CanonicalRegime.DISTRIBUTION,
+    )
+    report = search_historical_analogs(
+        query,
+        (*history(), query, different),
+        config=AnalogSearchConfig(
+            k=3,
+            min_history=10,
+            same_regime_only=True,
+        ),
+    )
+    assert report.status is AnalogSearchStatus.READY
+    assert all(item.state_id != query.state_id for item in report.matches)
+    assert all(item.regime is query.regime for item in report.matches)
+
+    no_signals = replace(
+        query,
+        state_id="regime-state:sha256:" + "f" * 64,
+        state_sha256="f" * 64,
+        regime=CanonicalRegime.NO_DATA,
+        signals=(),
+    )
+    no_signal_report = search_historical_analogs(
+        no_signals,
+        history(),
+        config=AnalogSearchConfig(k=3, min_history=10),
+    )
+    assert no_signal_report.status is AnalogSearchStatus.NO_DATA
+    assert "NO_ANALOG_SIGNALS" in no_signal_report.reasons
+
+
+def test_analog_finite_and_duplicate_exclusion_validation() -> None:
+    from xrp_regime_engine.historical_analog_v1 import _finite
+
+    with pytest.raises(ValueError, match="finite"):
+        _finite(float("nan"), "x")
+    with pytest.raises(ValueError, match="excluded_signals"):
+        AnalogSearchConfig(excluded_signals=("trend", "trend"))
+
+
+def test_sensitivity_can_surface_all_instability_reasons() -> None:
+    query = state(
+        40,
+        trend=0.45,
+        relative=0.25,
+        spot_flow=0.55,
+    )
+    material = []
+    for index in range(20):
+        if index < 10:
+            item = state(
+                index,
+                trend=0.44 + 0.001 * index,
+                relative=0.24,
+                spot_flow=0.54,
+                provider="providers-v1",
+            )
+        else:
+            base_item = state(
+                index,
+                trend=-0.1,
+                relative=-0.2,
+                spot_flow=0.0,
+                provider="providers-v2",
+            )
+            item = replace(
+                base_item,
+                state_id="regime-state:sha256:" + f"{index + 100:064x}",
+                state_sha256=f"{index + 100:064x}",
+                regime=CanonicalRegime.DISTRIBUTION,
+            )
+        material.append(item)
+
+    report = run_analog_sensitivity(
+        query,
+        tuple(material),
+        base_config=AnalogSearchConfig(k=3, min_history=5),
+        metrics=(DistanceMetric.EUCLIDEAN,),
+        ablation_sets=((),),
+        lookbacks=(None,),
+        provider_universe_filters=(
+            ("providers-v1",),
+            ("providers-v2",),
+        ),
+        min_ready_scenarios=3,
+        min_top_k_overlap=1.0,
+        min_top_regime_agreement=1.0,
+    )
+    assert report.stable is False
+    assert {
+        "INSUFFICIENT_READY_SENSITIVITY_SCENARIOS",
+        "ANALOG_TOP_K_UNSTABLE",
+        "ANALOG_REGIME_UNSTABLE",
+    } <= set(report.reasons)
