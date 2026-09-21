@@ -111,9 +111,18 @@ class FetchReceipt:
             "parser_version": _text(parser_version, "parser_version"),
         }
         digest = sha256(_canonical(material)).hexdigest()
-        return cls(fetch_id=f"fetch:sha256:{digest}", fetched_at=fetched, **{
-            key: value for key, value in material.items() if key != "fetched_at"
-        })
+        return cls(
+            fetch_id=f"fetch:sha256:{digest}",
+            source_id=material["source_id"],
+            provider=material["provider"],
+            canonical_uri=uri,
+            endpoint=material["endpoint"],
+            request_fingerprint=request_hash,
+            fetched_at=fetched,
+            payload_sha256=payload_hash,
+            ingestion_version=material["ingestion_version"],
+            parser_version=material["parser_version"],
+        )
 
 
 @dataclass(frozen=True, slots=True)
