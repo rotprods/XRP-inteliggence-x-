@@ -9,7 +9,6 @@ from hashlib import sha256
 from xrp_regime_engine.baseline_models_v1 import (
     BaselineKind,
     BaselineTrainingPolicy,
-    binary_event_actual,
     fit_baseline_model,
 )
 from xrp_regime_engine.calibration_evidence_v1 import (
