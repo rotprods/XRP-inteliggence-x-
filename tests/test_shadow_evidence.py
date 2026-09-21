@@ -147,7 +147,9 @@ def test_builds_uncalibrated_non_executable_vector_with_independent_anchor() -> 
 
 
 def test_blocked_alignment_and_future_anchor_fail_closed() -> None:
-    assert build_shadow_evidence_vector(_aligned(eligible=False), independent_anchor=_anchor()) is None
+    assert (
+        build_shadow_evidence_vector(_aligned(eligible=False), independent_anchor=_anchor()) is None
+    )
     assert (
         build_shadow_evidence_vector(
             _aligned(),
