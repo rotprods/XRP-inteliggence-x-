@@ -164,7 +164,7 @@ def test_ledger_rejects_outcome_without_prediction_and_mutation(tmp_path: Path) 
         store.save_outcome(outcome)
     store.save_prediction(p)
     store.save_outcome(outcome)
-    with pytest.raises(ValueError, match="immutable"):
+    with pytest.raises(ValueError, match="content-addressed identity"):
         store.save_outcome(replace(outcome, actual=False))
 
 
@@ -211,3 +211,52 @@ def test_prediction_collision_and_corrupt_pair_payload(tmp_path: Path) -> None:
         )
     with pytest.raises(RuntimeError, match="payload must be an object"):
         store.resolved_pairs()
+
+
+def test_ledger_rejects_forged_content_identities_and_object_tamper(tmp_path: Path) -> None:
+    forged_store = OOSPredictionLedgerV1(tmp_path / "forged.db")
+    p = pred()
+    outcome = resolve_oos_outcome(p, Label())
+    with pytest.raises(ValueError, match="prediction content-addressed identity"):
+        forged_store.save_prediction(replace(p, raw_score=0.1))
+    forged_store.save_prediction(p)
+    with pytest.raises(ValueError, match="outcome content-addressed identity"):
+        forged_store.save_outcome(replace(outcome, actual=False))
+
+    prediction_store = OOSPredictionLedgerV1(tmp_path / "prediction-tamper.db")
+    prediction_store.save_prediction(p)
+    prediction_store.save_outcome(outcome)
+    with prediction_store._connection() as connection:
+        connection.execute(
+            "UPDATE oos_predictions SET payload_json='{}' WHERE prediction_id=?",
+            (p.prediction_id,),
+        )
+    with pytest.raises(RuntimeError, match="prediction content-addressed identity"):
+        prediction_store.resolved_pairs()
+
+    outcome_store = OOSPredictionLedgerV1(tmp_path / "outcome-tamper.db")
+    outcome_store.save_prediction(p)
+    outcome_store.save_outcome(outcome)
+    with outcome_store._connection() as connection:
+        connection.execute(
+            "UPDATE oos_outcomes SET payload_json='{}' WHERE prediction_id=?",
+            (p.prediction_id,),
+        )
+    with pytest.raises(RuntimeError, match="outcome content-addressed identity"):
+        outcome_store.resolved_pairs()
+
+
+def test_ledger_metadata_role_and_schema_fail_closed(tmp_path: Path) -> None:
+    role_path = tmp_path / "role.db"
+    role_store = OOSPredictionLedgerV1(role_path)
+    with role_store._connection() as connection:
+        connection.execute("UPDATE oos_metadata SET value='FOREIGN' WHERE key='ledger_role'")
+    with pytest.raises(ValueError, match="another OOS ledger role"):
+        OOSPredictionLedgerV1(role_path)
+
+    schema_path = tmp_path / "schema.db"
+    schema_store = OOSPredictionLedgerV1(schema_path)
+    with schema_store._connection() as connection:
+        connection.execute("UPDATE oos_metadata SET value='999' WHERE key='schema_version'")
+    with pytest.raises(ValueError, match="schema version"):
+        OOSPredictionLedgerV1(schema_path)

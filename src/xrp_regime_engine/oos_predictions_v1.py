@@ -61,6 +61,20 @@ def _canonical(payload: object) -> str:
     )
 
 
+def _content_identity_matches(
+    payload: Mapping[str, object],
+    *,
+    id_key: str,
+    digest_key: str,
+    prefix: str,
+) -> bool:
+    material = dict(payload)
+    identifier = material.pop(id_key, None)
+    stored_digest = material.pop(digest_key, None)
+    expected_digest = sha256(_canonical(material).encode()).hexdigest()
+    return identifier == f"{prefix}{expected_digest}" and stored_digest == expected_digest
+
+
 def _nonempty(value: str, field: str) -> str:
     normalized = value.strip()
     if not normalized:
@@ -359,17 +373,27 @@ class OOSPredictionLedgerV1:
                 )
                 """
             )
+            role = connection.execute(
+                "SELECT value FROM oos_metadata WHERE key='ledger_role'"
+            ).fetchone()
+            if role is not None and str(role["value"]) != OOS_LEDGER_ROLE:
+                raise ValueError("database already belongs to another OOS ledger role")
+            schema = connection.execute(
+                "SELECT value FROM oos_metadata WHERE key='schema_version'"
+            ).fetchone()
+            if schema is not None and str(schema["value"]) != str(OOS_LEDGER_SCHEMA_VERSION):
+                raise ValueError("unsupported OOS ledger schema version")
             connection.execute(
                 """
                 INSERT INTO oos_metadata(key, value) VALUES('ledger_role', ?)
-                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                ON CONFLICT(key) DO NOTHING
                 """,
                 (OOS_LEDGER_ROLE,),
             )
             connection.execute(
                 """
                 INSERT INTO oos_metadata(key, value) VALUES('schema_version', ?)
-                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                ON CONFLICT(key) DO NOTHING
                 """,
                 (str(OOS_LEDGER_SCHEMA_VERSION),),
             )
@@ -407,7 +431,15 @@ class OOSPredictionLedgerV1:
             raise ValueError("OOS raw prediction cannot claim calibrated/decision authority")
         if prediction.execution_weight != 0.0:
             raise ValueError("OOS raw prediction execution_weight must remain zero")
-        payload = _canonical(prediction.to_payload())
+        prediction_payload = prediction.to_payload()
+        if not _content_identity_matches(
+            prediction_payload,
+            id_key="prediction_id",
+            digest_key="prediction_sha256",
+            prefix="oos-prediction:sha256:",
+        ):
+            raise ValueError("prediction content-addressed identity does not match payload")
+        payload = _canonical(prediction_payload)
         with self._connection() as connection:
             existing = connection.execute(
                 "SELECT payload_json FROM oos_predictions WHERE prediction_id=?",
@@ -438,7 +470,15 @@ class OOSPredictionLedgerV1:
             )
 
     def save_outcome(self, outcome: ResolvedOOSOutcome) -> None:
-        payload = _canonical(outcome.to_payload())
+        outcome_payload = outcome.to_payload()
+        if not _content_identity_matches(
+            outcome_payload,
+            id_key="outcome_id",
+            digest_key="outcome_sha256",
+            prefix="oos-outcome:sha256:",
+        ):
+            raise ValueError("outcome content-addressed identity does not match payload")
+        payload = _canonical(outcome_payload)
         with self._connection() as connection:
             prediction = connection.execute(
                 "SELECT prediction_id FROM oos_predictions WHERE prediction_id=?",
@@ -497,5 +537,19 @@ class OOSPredictionLedgerV1:
             outcome_payload = json.loads(str(row["outcome_json"]))
             if not isinstance(prediction_payload, dict) or not isinstance(outcome_payload, dict):
                 raise RuntimeError("stored OOS ledger payload must be an object")
+            if not _content_identity_matches(
+                prediction_payload,
+                id_key="prediction_id",
+                digest_key="prediction_sha256",
+                prefix="oos-prediction:sha256:",
+            ):
+                raise RuntimeError("stored OOS prediction content-addressed identity is corrupt")
+            if not _content_identity_matches(
+                outcome_payload,
+                id_key="outcome_id",
+                digest_key="outcome_sha256",
+                prefix="oos-outcome:sha256:",
+            ):
+                raise RuntimeError("stored OOS outcome content-addressed identity is corrupt")
             pairs.append((prediction_payload, outcome_payload))
         return tuple(pairs)
