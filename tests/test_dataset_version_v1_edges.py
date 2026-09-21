@@ -152,7 +152,19 @@ def test_direct_version_structural_guards_fail_closed() -> None:
             partition_ids=(current.partition_ids[0], current.partition_ids[0]),
             partition_hashes=(PARTITION_SHA, PARTITION_SHA),
         )
-    with pytest.raises(ValueError, match="within \[0, 1\]"):
+    with pytest.raises(ValueError, match="source_manifest_ids must be sorted"):
+        replace(
+            current,
+            source_manifest_ids=(f"manifest:sha256:{'f' * 64}", current.source_manifest_ids[0]),
+            source_manifest_hashes=("f" * 64, MANIFEST_SHA),
+        )
+    with pytest.raises(ValueError, match="partition_ids must be sorted"):
+        replace(
+            current,
+            partition_ids=(f"partition:sha256:{'f' * 64}", current.partition_ids[0]),
+            partition_hashes=("f" * 64, PARTITION_SHA),
+        )
+    with pytest.raises(ValueError, match=r"within \[0, 1\]"):
         replace(current, strict_replay_fraction=1.1, reconstructed_pit_fraction=-0.1)
 
 
