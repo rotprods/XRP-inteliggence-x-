@@ -214,3 +214,19 @@ def test_missing_optional_signal_is_not_treated_as_neutral_evidence() -> None:
     assert state.signal_coverage > 0.70
     assert state.regime is CanonicalRegime.NO_DATA
     assert "NO_RULE_WITH_SUFFICIENT_SEPARATION" in state.reasons
+
+
+
+def test_regime_numeric_and_text_validators_fail_closed() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        RegimeSignalSpec("x", "market.x", center=float("nan"))
+    with pytest.raises(ValueError, match="signal"):
+        RegimeSignalSpec(" ", "market.x")
+    with pytest.raises(ValueError, match="feature_key"):
+        RegimeSignalSpec("x", " ")
+    with pytest.raises(ValueError, match=r"within \[0, 1\]"):
+        RegimeClassifierPolicy(
+            specs=(RegimeSignalSpec("x", "market.x"),),
+            required_signals=(),
+            breakout_threshold=2.0,
+        )
