@@ -196,9 +196,11 @@ class HistoricalObservation:
         }:
             return self.available_at
         if self.availability_precision is AvailabilityPrecision.DATE_ONLY:
-            assert self.available_date is not None
+            available_date = self.available_date
+            if available_date is None:
+                return None
             return datetime.combine(
-                self.available_date + timedelta(days=1),
+                available_date + timedelta(days=1),
                 datetime.min.time(),
                 UTC,
             )
