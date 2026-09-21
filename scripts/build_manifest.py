@@ -64,6 +64,9 @@ def main() -> None:
     if args.check:
         current = target.read_text(encoding="utf-8") if target.exists() else ""
         if current != expected:
+            print("BEGIN_EXPECTED_MANIFEST")
+            print(expected, end="")
+            print("END_EXPECTED_MANIFEST")
             raise SystemExit("release/MANIFEST.sha256 is stale; run scripts/build_manifest.py")
         print(f"verified {target} with {len(expected.splitlines())} entries")
         return
