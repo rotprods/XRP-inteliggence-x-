@@ -170,15 +170,9 @@ class FutureOutcomeLabel:
             maximum_adverse_excursion=float(payload["maximum_adverse_excursion"]),
             realized_log_volatility=float(payload["realized_log_volatility"]),
             maximum_drawdown=float(payload["maximum_drawdown"]),
-            positive_return_touches=cast(
-                Mapping[str, bool], payload["positive_return_touches"]
-            ),
-            negative_return_touches=cast(
-                Mapping[str, bool], payload["negative_return_touches"]
-            ),
-            absolute_price_touches=cast(
-                Mapping[str, bool], payload["absolute_price_touches"]
-            ),
+            positive_return_touches=cast(Mapping[str, bool], payload["positive_return_touches"]),
+            negative_return_touches=cast(Mapping[str, bool], payload["negative_return_touches"]),
+            absolute_price_touches=cast(Mapping[str, bool], payload["absolute_price_touches"]),
         )
         unsigned = label._unsigned_payload()
         digest = sha256(_canonical(unsigned).encode()).hexdigest()
@@ -238,9 +232,7 @@ def build_future_outcome_label(
     mfe = max(returns)
     mae = min(returns)
 
-    log_returns = [
-        math.log(prices[index] / prices[index - 1]) for index in range(1, len(prices))
-    ]
+    log_returns = [math.log(prices[index] / prices[index - 1]) for index in range(1, len(prices))]
     realized_log_volatility = math.sqrt(sum(value * value for value in log_returns))
 
     running_peak = prices[0]
@@ -250,12 +242,10 @@ def build_future_outcome_label(
         maximum_drawdown = min(maximum_drawdown, price / running_peak - 1.0)
 
     positive_touches = {
-        _touch_key(threshold): mfe >= threshold
-        for threshold in barrier_set.return_thresholds
+        _touch_key(threshold): mfe >= threshold for threshold in barrier_set.return_thresholds
     }
     negative_touches = {
-        _touch_key(threshold): mae <= -threshold
-        for threshold in barrier_set.return_thresholds
+        _touch_key(threshold): mae <= -threshold for threshold in barrier_set.return_thresholds
     }
     absolute_touches: dict[str, bool] = {}
     for barrier in barrier_set.absolute_prices:
