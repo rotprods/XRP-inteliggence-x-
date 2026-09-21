@@ -63,9 +63,7 @@ class AnalogSearchConfig:
             raise ValueError("signal_keys and excluded_signals cannot overlap")
         if self.max_lookback is not None and self.max_lookback <= timedelta(0):
             raise ValueError("max_lookback must be positive")
-        if len(self.provider_universe_versions) != len(
-            set(self.provider_universe_versions)
-        ):
+        if len(self.provider_universe_versions) != len(set(self.provider_universe_versions)):
             raise ValueError("provider_universe_versions must be unique")
 
 
@@ -102,15 +100,12 @@ def _selected_signals(
     available = set(query.signal_map())
     if config.signal_keys:
         selected = tuple(
-            key
-            for key in config.signal_keys
-            if key not in set(config.excluded_signals)
+            key for key in config.signal_keys if key not in set(config.excluded_signals)
         )
         missing = set(selected) - available
         if missing:
             raise ValueError(
-                "query is missing requested analog signals: "
-                + ",".join(sorted(missing))
+                "query is missing requested analog signals: " + ",".join(sorted(missing))
             )
         return selected
     return tuple(sorted(available - set(config.excluded_signals)))
@@ -124,9 +119,7 @@ def _eligible_candidates(
 ) -> tuple[RegimeState, ...]:
     provider_filter = set(config.provider_universe_versions)
     earliest = (
-        query.prediction_time - config.max_lookback
-        if config.max_lookback is not None
-        else None
+        query.prediction_time - config.max_lookback if config.max_lookback is not None else None
     )
     candidates: list[RegimeState] = []
     seen: set[str] = set()
@@ -171,10 +164,7 @@ def _normalizer(
         variance = sum((value - mean) ** 2 for value in values) / len(values)
         scale = math.sqrt(variance)
         stats[key] = (mean, scale if scale > 1e-12 else 1.0)
-    material = {
-        key: {"mean": mean, "scale": scale}
-        for key, (mean, scale) in sorted(stats.items())
-    }
+    material = {key: {"mean": mean, "scale": scale} for key, (mean, scale) in sorted(stats.items())}
     digest = sha256(_canonical(material).encode()).hexdigest()
     return stats, f"analog-normalizer:sha256:{digest}"
 
@@ -185,10 +175,7 @@ def _vector(
     stats: dict[str, tuple[float, float]],
 ) -> tuple[float, ...]:
     signals = state.signal_map()
-    return tuple(
-        (signals[key] - stats[key][0]) / stats[key][1]
-        for key in selected
-    )
+    return tuple((signals[key] - stats[key][0]) / stats[key][1] for key in selected)
 
 
 def _distance(
@@ -199,9 +186,7 @@ def _distance(
     if len(left) != len(right) or not left:
         raise ValueError("distance vectors must be non-empty and equal length")
     if metric is DistanceMetric.EUCLIDEAN:
-        return math.sqrt(
-            sum((a - b) ** 2 for a, b in zip(left, right, strict=True))
-        )
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(left, right, strict=True)))
     if metric is DistanceMetric.MANHATTAN:
         return sum(abs(a - b) for a, b in zip(left, right, strict=True))
     if metric is DistanceMetric.COSINE:
@@ -231,11 +216,7 @@ def search_historical_analogs(
     if not selected:
         reasons.append("NO_ANALOG_SIGNALS")
 
-    candidates = (
-        _eligible_candidates(query, history, selected_config, selected)
-        if selected
-        else ()
-    )
+    candidates = _eligible_candidates(query, history, selected_config, selected) if selected else ()
     if len(candidates) < selected_config.min_history:
         reasons.append("INSUFFICIENT_STRICTLY_PRIOR_HISTORY")
 
@@ -421,35 +402,25 @@ def run_analog_sensitivity(
                             base_ids,
                             tuple(item.state_id for item in report.matches),
                         )
-                        top_regime = (
-                            report.matches[0].regime
-                            if report.matches
-                            else None
-                        )
+                        top_regime = report.matches[0].regime if report.matches else None
                         regime_match = top_regime is base_top_regime
                     scenario_material = {
                         "metric": metric.value,
                         "excluded_signals": list(ablation),
                         "max_lookback_seconds": (
-                            lookback.total_seconds()
-                            if lookback is not None
-                            else None
+                            lookback.total_seconds() if lookback is not None else None
                         ),
                         "provider_universe_versions": list(provider_filter),
                         "report_id": report.report_id,
                     }
-                    scenario_digest = sha256(
-                        _canonical(scenario_material).encode()
-                    ).hexdigest()
+                    scenario_digest = sha256(_canonical(scenario_material).encode()).hexdigest()
                     scenarios.append(
                         AnalogSensitivityScenario(
                             scenario_id=f"analog-scenario:sha256:{scenario_digest}",
                             metric=metric,
                             excluded_signals=tuple(ablation),
                             max_lookback_seconds=(
-                                lookback.total_seconds()
-                                if lookback is not None
-                                else None
+                                lookback.total_seconds() if lookback is not None else None
                             ),
                             provider_universe_versions=tuple(provider_filter),
                             report_id=report.report_id,
@@ -459,26 +430,16 @@ def run_analog_sensitivity(
                         )
                     )
 
-    ready = tuple(
-        item
-        for item in scenarios
-        if item.status is AnalogSearchStatus.READY
-    )
+    ready = tuple(item for item in scenarios if item.status is AnalogSearchStatus.READY)
     overlaps = [
-        item.top_k_overlap_with_base
-        for item in ready
-        if item.top_k_overlap_with_base is not None
+        item.top_k_overlap_with_base for item in ready if item.top_k_overlap_with_base is not None
     ]
     regime_flags = [
-        item.top_regime_matches_base
-        for item in ready
-        if item.top_regime_matches_base is not None
+        item.top_regime_matches_base for item in ready if item.top_regime_matches_base is not None
     ]
     minimum_overlap = min(overlaps) if overlaps else None
     regime_rate = (
-        sum(1 for value in regime_flags if value) / len(regime_flags)
-        if regime_flags
-        else None
+        sum(1 for value in regime_flags if value) / len(regime_flags) if regime_flags else None
     )
     reasons: list[str] = []
     if len(ready) < min_ready_scenarios:
