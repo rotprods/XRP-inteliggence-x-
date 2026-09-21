@@ -201,7 +201,6 @@ def test_signal_feature_key_requires_family_name() -> None:
         spec.transform(item)
 
 
-
 def test_missing_optional_signal_is_not_treated_as_neutral_evidence() -> None:
     item = feature_from_signals(
         7,
