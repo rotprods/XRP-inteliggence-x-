@@ -168,9 +168,7 @@ def _config_payload(config: AnalogSearchConfig) -> dict[str, object]:
         "signal_keys": list(config.signal_keys),
         "excluded_signals": list(config.excluded_signals),
         "max_lookback_seconds": (
-            config.max_lookback.total_seconds()
-            if config.max_lookback is not None
-            else None
+            config.max_lookback.total_seconds() if config.max_lookback is not None else None
         ),
         "provider_universe_versions": list(config.provider_universe_versions),
     }
@@ -303,9 +301,7 @@ def _baseline_evidence_on_subset(
         }
     }
     evidence: dict[BaselineKind, CalibrationEvidenceV1] = {}
-    outcome_by_prediction = {
-        item.prediction_id: item for item in baseline_run.outcomes
-    }
+    outcome_by_prediction = {item.prediction_id: item for item in baseline_run.outcomes}
     for kind in sorted(eligible_kinds, key=lambda item: item.value):
         model_id = f"baseline:{kind.value}"
         predictions = tuple(
@@ -353,12 +349,10 @@ def run_regime_analog_oos_challenger(
     for fold in ordered_folds:
         train_rows, test_rows = _fold_rows(fold, rows)
         training_states = tuple(
-            classify_regime(item.feature, policy=selected_regime_policy)
-            for item in train_rows
+            classify_regime(item.feature, policy=selected_regime_policy) for item in train_rows
         )
         state_to_row = {
-            state.state_id: row
-            for state, row in zip(training_states, train_rows, strict=True)
+            state.state_id: row for state, row in zip(training_states, train_rows, strict=True)
         }
         if len(state_to_row) != len(training_states):
             raise ValueError("training regime state identity collision")
@@ -484,12 +478,8 @@ def run_regime_analog_oos_challenger(
                 item[0].value,
             ),
         )
-        brier_improvement = (
-            comparator_evidence.brier_score - analog_evidence.brier_score
-        )
-        log_loss_delta = (
-            analog_evidence.log_loss - comparator_evidence.log_loss
-        )
+        brier_improvement = comparator_evidence.brier_score - analog_evidence.brier_score
+        log_loss_delta = analog_evidence.log_loss - comparator_evidence.log_loss
 
         if analog_evidence.sample_count < selected_policy.min_oos_predictions:
             reasons.append("INSUFFICIENT_OOS_SAMPLE")
@@ -498,9 +488,7 @@ def run_regime_analog_oos_challenger(
         if analog_evidence.negative_count < selected_policy.min_class_count:
             reasons.append("INSUFFICIENT_NEGATIVE_CLASS")
         total_test = len(predictions) + len(suppressions)
-        suppressed_fraction = (
-            len(suppressions) / total_test if total_test else 1.0
-        )
+        suppressed_fraction = len(suppressions) / total_test if total_test else 1.0
         if suppressed_fraction > selected_policy.max_suppressed_fraction:
             reasons.append("EXCESSIVE_ANALOG_SUPPRESSION")
         if brier_improvement < selected_policy.min_brier_improvement:
@@ -532,21 +520,13 @@ def run_regime_analog_oos_challenger(
         "prediction_ids": [item.prediction_id for item in predictions],
         "outcome_ids": [item.outcome_id for item in outcomes],
         "lineage_report_ids": [item.analog_report_id for item in lineages],
-        "suppressed_feature_row_ids": [
-            item.feature_row_id for item in suppressions
-        ],
+        "suppressed_feature_row_ids": [item.feature_row_id for item in suppressions],
         "analog_evidence_id": (
-            analog_evidence.evidence_id
-            if analog_evidence is not None
-            else None
+            analog_evidence.evidence_id if analog_evidence is not None else None
         ),
-        "comparator_kind": (
-            comparator_kind.value if comparator_kind is not None else None
-        ),
+        "comparator_kind": (comparator_kind.value if comparator_kind is not None else None),
         "comparator_evidence_id": (
-            comparator_evidence.evidence_id
-            if comparator_evidence is not None
-            else None
+            comparator_evidence.evidence_id if comparator_evidence is not None else None
         ),
         "state": state.value,
         "reasons": sorted(reasons),
