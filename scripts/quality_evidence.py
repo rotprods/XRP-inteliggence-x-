@@ -54,7 +54,9 @@ def main() -> None:
     evidence = {
         "schema_version": 2,
         "python_runtime": platform.python_version(),
-        "validated_python_versions": [v.strip() for v in args.python_versions.split(",") if v.strip()],
+        "validated_python_versions": [
+            v.strip() for v in args.python_versions.split(",") if v.strip()
+        ],
         "platform": platform.platform(),
         "pytest": pytest_counts(args.pytest_junit),
         "coverage": load_json(args.coverage),

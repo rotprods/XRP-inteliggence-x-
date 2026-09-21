@@ -38,7 +38,9 @@ def percentage(covered: int, total: int) -> float:
 
 def metrics(summary: dict[str, int | float]) -> tuple[float, float]:
     line = percentage(int(summary["covered_lines"]), int(summary["num_statements"]))
-    branch = percentage(int(summary.get("covered_branches", 0)), int(summary.get("num_branches", 0)))
+    branch = percentage(
+        int(summary.get("covered_branches", 0)), int(summary.get("num_branches", 0))
+    )
     return line, branch
 
 
