@@ -24,7 +24,7 @@ class BinanceFuturesProvider(MarketDataProvider):
         symbol = self.symbols.get(asset)
         if symbol is None:
             raise ProviderError(f"unsupported asset: {asset}")
-        payload, _, _ = await self._request_json(
+        payload, _, digest = await self._request_json(
             "GET", "/fapi/v1/premiumIndex", params={"symbol": symbol}
         )
         if not isinstance(payload, dict):
@@ -39,6 +39,7 @@ class BinanceFuturesProvider(MarketDataProvider):
                 index_price=float(payload["indexPrice"]),
                 funding_rate=float(payload["lastFundingRate"]),
                 next_funding_at=next_funding,
+                payload_sha256=digest,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ProviderError("Binance returned malformed premium-index data") from exc
@@ -47,7 +48,7 @@ class BinanceFuturesProvider(MarketDataProvider):
         symbol = self.symbols.get(asset)
         if symbol is None:
             raise ProviderError(f"unsupported asset: {asset}")
-        payload, _, _ = await self._request_json(
+        payload, _, digest = await self._request_json(
             "GET", "/fapi/v1/openInterest", params={"symbol": symbol}
         )
         if not isinstance(payload, dict):
@@ -58,6 +59,7 @@ class BinanceFuturesProvider(MarketDataProvider):
                 symbol=symbol,
                 observed_at=observed_at,
                 open_interest=float(payload["openInterest"]),
+                payload_sha256=digest,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ProviderError("Binance returned malformed open-interest data") from exc
