@@ -259,7 +259,7 @@ def search_historical_analogs(
         )
 
     status = AnalogSearchStatus.READY if not reasons else AnalogSearchStatus.NO_DATA
-    material = {
+    material: dict[str, object] = {
         "query_state_id": query.state_id,
         "metric": selected_config.metric.value,
         "selected_signals": list(selected),
@@ -356,13 +356,13 @@ def run_analog_sensitivity(
 
     base = search_historical_analogs(query, history, config=base_config)
     if base.status is not AnalogSearchStatus.READY:
-        reasons = ("BASE_ANALOG_SEARCH_NOT_READY",)
-        material = {
+        base_reasons = ("BASE_ANALOG_SEARCH_NOT_READY",)
+        base_material: dict[str, object] = {
             "query_state_id": query.state_id,
             "base_report_id": base.report_id,
-            "reasons": list(reasons),
+            "reasons": list(base_reasons),
         }
-        digest = sha256(_canonical(material).encode()).hexdigest()
+        digest = sha256(_canonical(base_material).encode()).hexdigest()
         return AnalogSensitivityReport(
             report_id=f"analog-sensitivity:sha256:{digest}",
             report_sha256=digest,
@@ -373,7 +373,7 @@ def run_analog_sensitivity(
             minimum_top_k_overlap=None,
             top_regime_agreement_rate=None,
             stable=False,
-            reasons=reasons,
+            reasons=base_reasons,
         )
 
     base_ids = tuple(item.state_id for item in base.matches)
