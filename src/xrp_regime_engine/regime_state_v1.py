@@ -4,6 +4,7 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
 
@@ -253,7 +254,7 @@ class RegimeState:
     state_id: str
     state_sha256: str
     feature_row_id: str
-    prediction_time: object
+    prediction_time: datetime
     horizon: ResearchHorizon
     policy_id: str
     regime: CanonicalRegime
