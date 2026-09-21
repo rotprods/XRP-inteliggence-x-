@@ -157,6 +157,10 @@ class DatasetVersion:
             raise ValueError("source_manifest_ids must be unique")
         if len(self.partition_ids) != len(set(self.partition_ids)):
             raise ValueError("partition_ids must be unique")
+        if self.source_manifest_ids != tuple(sorted(self.source_manifest_ids)):
+            raise ValueError("source_manifest_ids must be sorted")
+        if self.partition_ids != tuple(sorted(self.partition_ids)):
+            raise ValueError("partition_ids must be sorted")
         for manifest_id in self.source_manifest_ids:
             _content_id(manifest_id, "manifest:sha256:", "manifest_id")
         for partition_id in self.partition_ids:
@@ -171,6 +175,36 @@ class DatasetVersion:
         providers = tuple(item.provider for item in self.provider_coverage)
         if providers != tuple(sorted(providers)) or len(providers) != len(set(providers)):
             raise ValueError("provider_coverage must be unique and sorted by provider")
+        if self.dataset_version_id != f"dataset-version:sha256:{self.dataset_sha256}":
+            raise ValueError("dataset_version_id must match dataset_sha256")
+        material = {
+            "dataset_key": self.dataset_key,
+            "schema_version": self.schema_version,
+            "source_manifests": [
+                {"id": manifest_id, "sha256": manifest_hash}
+                for manifest_id, manifest_hash in zip(
+                    self.source_manifest_ids, self.source_manifest_hashes, strict=True
+                )
+            ],
+            "partitions": [
+                {"id": partition_id, "sha256": partition_hash}
+                for partition_id, partition_hash in zip(
+                    self.partition_ids, self.partition_hashes, strict=True
+                )
+            ],
+            "feature_schema_version": self.feature_schema_version,
+            "label_schema_version": self.label_schema_version,
+            "created_at": self.created_at.isoformat(),
+            "cutoff_at": self.cutoff_at.isoformat(),
+            "total_rows": self.total_rows,
+            "strict_replay_fraction": self.strict_replay_fraction,
+            "reconstructed_pit_fraction": self.reconstructed_pit_fraction,
+            "provider_coverage": [item.to_dict() for item in self.provider_coverage],
+            "gaps": [item.to_dict() for item in self.gaps],
+        }
+        expected_digest = sha256(_canonical(material)).hexdigest()
+        if self.dataset_sha256 != expected_digest:
+            raise ValueError("dataset content-addressed identity does not match canonical payload")
 
     @property
     def reconstructed(self) -> bool:
