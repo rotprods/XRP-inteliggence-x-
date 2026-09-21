@@ -334,10 +334,7 @@ def classify_regime(
             and leverage >= selected.leverage_threshold
         ):
             regime = CanonicalRegime.LONG_CROWDING
-        elif (
-            _has(extracted, "distribution")
-            and distribution >= selected.distribution_threshold
-        ):
+        elif _has(extracted, "distribution") and distribution >= selected.distribution_threshold:
             regime = CanonicalRegime.DISTRIBUTION
         elif (
             _has(extracted, "breakout", "trend")
