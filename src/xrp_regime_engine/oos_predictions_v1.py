@@ -474,14 +474,12 @@ class OOSPredictionLedgerV1:
     def prediction_count(self) -> int:
         with self._connection() as connection:
             row = connection.execute("SELECT COUNT(*) AS count FROM oos_predictions").fetchone()
-        assert row is not None
-        return int(row["count"])
+        return int(cast(sqlite3.Row, row)["count"])
 
     def outcome_count(self) -> int:
         with self._connection() as connection:
             row = connection.execute("SELECT COUNT(*) AS count FROM oos_outcomes").fetchone()
-        assert row is not None
-        return int(row["count"])
+        return int(cast(sqlite3.Row, row)["count"])
 
     def resolved_pairs(self) -> tuple[tuple[dict[str, object], dict[str, object]], ...]:
         with self._connection() as connection:
