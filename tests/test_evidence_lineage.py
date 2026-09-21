@@ -158,15 +158,11 @@ def test_lineage_rejects_directional_or_incomplete_inputs() -> None:
 def test_lineage_requires_complete_role_and_provider_coverage() -> None:
     sources = complete_sources()
 
-    without_depth = tuple(
-        item for item in sources if item.role != EvidenceSourceRole.DEPTH
-    )
+    without_depth = tuple(item for item in sources if item.role != EvidenceSourceRole.DEPTH)
     with pytest.raises(ValueError, match="required evidence source roles.*depth"):
         build_shadow_evidence_lineage(vector(), without_depth)
 
-    without_funding = tuple(
-        item for item in sources if item.role != EvidenceSourceRole.FUNDING
-    )
+    without_funding = tuple(item for item in sources if item.role != EvidenceSourceRole.FUNDING)
     with pytest.raises(ValueError, match="required evidence source roles.*funding"):
         build_shadow_evidence_lineage(vector(), without_funding)
 
@@ -174,9 +170,7 @@ def test_lineage_requires_complete_role_and_provider_coverage() -> None:
     lineage = build_shadow_evidence_lineage(vector_without_funding, without_funding)
     assert EvidenceSourceRole.FUNDING not in {item.role for item in lineage.sources}
 
-    without_kraken = tuple(
-        item for item in sources if item.source_id != "source:kraken:xrp"
-    )
+    without_kraken = tuple(item for item in sources if item.source_id != "source:kraken:xrp")
     with pytest.raises(ValueError, match="exactly match"):
         build_shadow_evidence_lineage(vector(), without_kraken)
 
