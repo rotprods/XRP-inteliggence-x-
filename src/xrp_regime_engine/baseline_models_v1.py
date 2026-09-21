@@ -260,8 +260,7 @@ def fit_baseline_model(
         if not used_features:
             raise ValueError("B4 logistic requires at least one feature key")
         columns = [
-            tuple(_feature_value(item.feature, key) for item in ordered)
-            for key in used_features
+            tuple(_feature_value(item.feature, key) for item in ordered) for key in used_features
         ]
         means_scales = tuple(_mean_scale(column) for column in columns)
         matrix = tuple(
