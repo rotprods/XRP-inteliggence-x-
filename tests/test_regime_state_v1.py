@@ -216,7 +216,6 @@ def test_missing_optional_signal_is_not_treated_as_neutral_evidence() -> None:
     assert "NO_RULE_WITH_SUFFICIENT_SEPARATION" in state.reasons
 
 
-
 def test_regime_numeric_and_text_validators_fail_closed() -> None:
     with pytest.raises(ValueError, match="finite"):
         RegimeSignalSpec("x", "market.x", center=float("nan"))
