@@ -97,18 +97,10 @@ def _complete_provenance(
     if not declared_complete:
         return False
 
-    first_observed = _require_present_aware(
-        first_observed_at, f"{field}.first_observed_at"
-    )
-    last_observed = _require_present_aware(
-        last_observed_at, f"{field}.last_observed_at"
-    )
-    first_available = _require_present_aware(
-        first_available_at, f"{field}.first_available_at"
-    )
-    last_available = _require_present_aware(
-        last_available_at, f"{field}.last_available_at"
-    )
+    first_observed = _require_present_aware(first_observed_at, f"{field}.first_observed_at")
+    last_observed = _require_present_aware(last_observed_at, f"{field}.last_observed_at")
+    first_available = _require_present_aware(first_available_at, f"{field}.first_available_at")
+    last_available = _require_present_aware(last_available_at, f"{field}.last_available_at")
     first_fetched = _require_present_aware(first_fetched_at, f"{field}.first_fetched_at")
     last_fetched = _require_present_aware(last_fetched_at, f"{field}.last_fetched_at")
 
@@ -235,9 +227,7 @@ def reconcile_depth_with_order_flow(
             dynamics_last_fetched = _require_present_aware(
                 dynamics.last_fetched_at, "dynamics.last_fetched_at"
             )
-            flow_last_fetched = _require_present_aware(
-                flow.last_fetched_at, "flow.last_fetched_at"
-            )
+            flow_last_fetched = _require_present_aware(flow.last_fetched_at, "flow.last_fetched_at")
             latest_fetched_at = max(dynamics_last_fetched, flow_last_fetched)
             if observed_at > prediction_time or latest_fetched_at > prediction_time:
                 flags.append("FUTURE_KNOWLEDGE_BLOCKED")
