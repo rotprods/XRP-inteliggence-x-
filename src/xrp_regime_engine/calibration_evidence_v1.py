@@ -5,7 +5,8 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 from xrp_regime_engine.oos_predictions_v1 import OOSPrediction, ResolvedOOSOutcome
 from xrp_regime_engine.research_horizon import ResearchHorizon
