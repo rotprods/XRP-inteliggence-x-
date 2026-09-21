@@ -158,9 +158,7 @@ def test_logistic_fits_only_declared_train_features() -> None:
     assert 0 <= negative_score <= 1
     assert 0 <= positive_score <= 1
     assert positive_score > negative_score
-    assert model.training_feature_row_ids == tuple(
-        row.feature.feature_row_id for row in rows[:8]
-    )
+    assert model.training_feature_row_ids == tuple(row.feature.feature_row_id for row in rows[:8])
 
 
 def test_training_guards_fail_closed() -> None:
@@ -235,10 +233,7 @@ def test_factory_executes_all_baselines_and_freezes_oos_records() -> None:
     assert len(result.outcomes) == len(result.predictions)
     assert len({item.prediction_id for item in result.predictions}) == len(result.predictions)
     assert result.model_fit_ids
-    assert all(
-        item.model_version.startswith("baseline-fit:sha256:")
-        for item in result.predictions
-    )
+    assert all(item.model_version.startswith("baseline-fit:sha256:") for item in result.predictions)
     assert result.final_holdout_untouched is True
     assert result.probability_calibrated is False
     assert result.production_ready is False
@@ -249,7 +244,9 @@ def test_factory_executes_all_baselines_and_freezes_oos_records() -> None:
     assert skill[BaselineKind.B0_BASE_RATE].state is BaselineSkillState.REFERENCE_BASELINE
     assert skill[BaselineKind.B2_MOMENTUM].state is BaselineSkillState.ELIGIBLE_CHALLENGER
     assert skill[BaselineKind.B3_MEAN_REVERSION].state is BaselineSkillState.REJECTED
-    assert skill[BaselineKind.B2_MOMENTUM].brier_score < skill[BaselineKind.B0_BASE_RATE].brier_score
+    assert (
+        skill[BaselineKind.B2_MOMENTUM].brier_score < skill[BaselineKind.B0_BASE_RATE].brier_score
+    )
     assert result.development_challenger in {
         BaselineKind.B1_PERSISTENCE,
         BaselineKind.B2_MOMENTUM,
@@ -332,7 +329,6 @@ def test_skill_policy_validation() -> None:
         BaselineSkillPolicy(min_oos_predictions=0)
     with pytest.raises(ValueError, match="negative"):
         BaselineSkillPolicy(min_brier_improvement=-1)
-
 
 
 def test_factory_requires_content_addressed_dataset_version() -> None:
