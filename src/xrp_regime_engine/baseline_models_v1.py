@@ -70,9 +70,12 @@ def _feature_value(feature: HistoricalFeatureRow, key: str) -> float:
     except ValueError as exc:
         raise ValueError("feature keys must use family.name") from exc
     values = feature.feature_families.get(family)
-    if values is None or name not in values or values[name] is None:
+    if values is None:
         raise ValueError(f"required baseline feature is missing: {key}")
-    return _finite(float(values[name]), key)
+    raw_value = values.get(name)
+    if raw_value is None:
+        raise ValueError(f"required baseline feature is missing: {key}")
+    return _finite(raw_value, key)
 
 
 def binary_event_actual(event_key: str, row: LabeledFeatureRow) -> bool:
