@@ -135,6 +135,8 @@ class BackfillRunnerV2:
         adapter: HistoricalAdapterV2,
         page: BackfillPageV2,
     ) -> None:
+        if page.receipt.provider != adapter.provider:
+            raise ValueError("adapter page receipt provider does not match adapter provider")
         for observation in page.observations:
             if observation.dataset != adapter.dataset:
                 raise ValueError("adapter page contains observation from another dataset")
