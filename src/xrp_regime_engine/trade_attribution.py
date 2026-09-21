@@ -40,6 +40,13 @@ def _require_aware(value: datetime, field: str) -> None:
         raise ValueError(f"{field} must be timezone-aware")
 
 
+def _require_present_aware(value: datetime | None, field: str) -> datetime:
+    if value is None:
+        raise ValueError(f"{field} is required")
+    _require_aware(value, field)
+    return value
+
+
 def _require_positive_finite(value: float, field: str) -> None:
     if not isfinite(value) or value <= 0:
         raise ValueError(f"{field} must be finite and positive")
@@ -89,32 +96,31 @@ def _complete_provenance(
         raise ValueError(f"{field} declares complete provenance without a complete envelope")
     if not declared_complete:
         return False
-    assert all(value is not None for value in values)
-    for name, value in (
-        ("first_observed_at", first_observed_at),
-        ("last_observed_at", last_observed_at),
-        ("first_available_at", first_available_at),
-        ("last_available_at", last_available_at),
-        ("first_fetched_at", first_fetched_at),
-        ("last_fetched_at", last_fetched_at),
-    ):
-        assert value is not None
-        _require_aware(value, f"{field}.{name}")
-    assert first_observed_at is not None
-    assert last_observed_at is not None
-    assert first_available_at is not None
-    assert last_available_at is not None
-    assert first_fetched_at is not None
-    assert last_fetched_at is not None
-    if first_observed_at > last_observed_at:
+
+    first_observed = _require_present_aware(
+        first_observed_at, f"{field}.first_observed_at"
+    )
+    last_observed = _require_present_aware(
+        last_observed_at, f"{field}.last_observed_at"
+    )
+    first_available = _require_present_aware(
+        first_available_at, f"{field}.first_available_at"
+    )
+    last_available = _require_present_aware(
+        last_available_at, f"{field}.last_available_at"
+    )
+    first_fetched = _require_present_aware(first_fetched_at, f"{field}.first_fetched_at")
+    last_fetched = _require_present_aware(last_fetched_at, f"{field}.last_fetched_at")
+
+    if first_observed > last_observed:
         raise ValueError(f"{field} observed envelope is reversed")
-    if first_available_at > last_available_at:
+    if first_available > last_available:
         raise ValueError(f"{field} available envelope is reversed")
-    if first_fetched_at > last_fetched_at:
+    if first_fetched > last_fetched:
         raise ValueError(f"{field} fetched envelope is reversed")
-    if first_observed_at > first_available_at or last_observed_at > last_available_at:
+    if first_observed > first_available or last_observed > last_available:
         raise ValueError(f"{field} availability precedes observation")
-    if first_available_at > first_fetched_at or last_available_at > last_fetched_at:
+    if first_available > first_fetched or last_available > last_fetched:
         raise ValueError(f"{field} fetch precedes availability")
     return True
 
@@ -226,9 +232,13 @@ def reconcile_depth_with_order_flow(
         if prediction_time is None:
             flags.append("PREDICTION_TIME_REQUIRED")
         else:
-            assert dynamics.last_fetched_at is not None
-            assert flow.last_fetched_at is not None
-            latest_fetched_at = max(dynamics.last_fetched_at, flow.last_fetched_at)
+            dynamics_last_fetched = _require_present_aware(
+                dynamics.last_fetched_at, "dynamics.last_fetched_at"
+            )
+            flow_last_fetched = _require_present_aware(
+                flow.last_fetched_at, "flow.last_fetched_at"
+            )
+            latest_fetched_at = max(dynamics_last_fetched, flow_last_fetched)
             if observed_at > prediction_time or latest_fetched_at > prediction_time:
                 flags.append("FUTURE_KNOWLEDGE_BLOCKED")
                 future_knowledge_blocked = True
