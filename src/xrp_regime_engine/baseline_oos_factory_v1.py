@@ -184,11 +184,7 @@ def _skill_entry(
         reasons.append("NO_BRIER_IMPROVEMENT")
     if log_loss_delta > policy.max_log_loss_regression:
         reasons.append("LOG_LOSS_REGRESSION")
-    state = (
-        BaselineSkillState.ELIGIBLE_CHALLENGER
-        if not reasons
-        else BaselineSkillState.REJECTED
-    )
+    state = BaselineSkillState.ELIGIBLE_CHALLENGER if not reasons else BaselineSkillState.REJECTED
     return BaselineModelSkill(
         kind=kind,
         state=state,
@@ -284,14 +280,9 @@ def run_baseline_oos_factory(
 
     b0 = evidence_by_kind[BaselineKind.B0_BASE_RATE]
     skills = tuple(
-        _skill_entry(kind, evidence_by_kind[kind], b0, selected_skill_policy)
-        for kind in kinds
+        _skill_entry(kind, evidence_by_kind[kind], b0, selected_skill_policy) for kind in kinds
     )
-    eligible = [
-        item
-        for item in skills
-        if item.state is BaselineSkillState.ELIGIBLE_CHALLENGER
-    ]
+    eligible = [item for item in skills if item.state is BaselineSkillState.ELIGIBLE_CHALLENGER]
     development_challenger = (
         min(eligible, key=lambda item: (item.brier_score, item.log_loss, item.kind.value)).kind
         if eligible
