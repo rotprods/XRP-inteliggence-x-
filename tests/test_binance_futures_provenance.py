@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -9,7 +10,7 @@ from xrp_regime_engine.providers.binance_futures import BinanceFuturesProvider
 OBSERVED = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
 
 
-def _provider(handler) -> BinanceFuturesProvider:
+def _provider(handler: Callable[[httpx.Request], httpx.Response]) -> BinanceFuturesProvider:
     return BinanceFuturesProvider(
         "https://fapi.binance.com",
         transport=httpx.MockTransport(handler),
@@ -29,7 +30,9 @@ async def test_funding_captures_local_fetch_time_without_inventing_availability(
                 "markPrice": "1.42",
                 "indexPrice": "1.419",
                 "lastFundingRate": "0.0001",
-                "nextFundingTime": int((OBSERVED + timedelta(hours=8)).timestamp() * 1000),
+                "nextFundingTime": int(
+                    (OBSERVED + timedelta(hours=8)).timestamp() * 1000
+                ),
                 "time": int(OBSERVED.timestamp() * 1000),
             },
             headers={"content-type": "application/json"},
@@ -43,6 +46,7 @@ async def test_funding_captures_local_fetch_time_without_inventing_availability(
         await provider.aclose()
     after = datetime.now(UTC)
 
+    assert state.fetched_at is not None
     assert before <= state.fetched_at <= after
     assert state.available_at is None
     assert state.provenance_complete is False
@@ -73,6 +77,7 @@ async def test_open_interest_captures_local_fetch_time_without_inventing_availab
         await provider.aclose()
     after = datetime.now(UTC)
 
+    assert state.fetched_at is not None
     assert before <= state.fetched_at <= after
     assert state.available_at is None
     assert state.provenance_complete is False
@@ -85,6 +90,8 @@ async def test_future_exchange_timestamp_fails_closed_against_ingestion_clock() 
     future = datetime.now(UTC) + timedelta(hours=1)
 
     def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/fapi/v1/openInterest"
         return httpx.Response(
             200,
             json={
