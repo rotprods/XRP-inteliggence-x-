@@ -66,9 +66,7 @@ def test_calibration_bins_ece_and_empty_bins() -> None:
 
 
 def test_calibration_single_class_has_no_auc_or_slope() -> None:
-    evidence = build_calibration_evidence(
-        (rec(0, 0.1, False), rec(1, 0.2, False))
-    )
+    evidence = build_calibration_evidence((rec(0, 0.1, False), rec(1, 0.2, False)))
     assert evidence.roc_auc is None
     assert evidence.calibration_intercept is None
     assert evidence.calibration_slope is None
@@ -94,9 +92,7 @@ def test_calibration_validation() -> None:
             )
         )
     with pytest.raises(ValueError, match="one horizon"):
-        build_calibration_evidence(
-            (rec(0, 0.1, False), rec(1, 0.2, True, event="other"))
-        )
+        build_calibration_evidence((rec(0, 0.1, False), rec(1, 0.2, True, event="other")))
     with pytest.raises(ValueError, match="raw_score"):
         build_calibration_evidence((rec(0, 2, False),))
 
