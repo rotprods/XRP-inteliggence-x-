@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from enum import StrEnum
 from hashlib import sha256
 
 from xrp_regime_engine.semantic_brain.models import (
@@ -17,7 +18,16 @@ from xrp_regime_engine.semantic_brain.models import (
 )
 from xrp_regime_engine.shadow_evidence import ShadowEvidenceVector
 
-LINEAGE_SCHEMA_VERSION = 1
+LINEAGE_SCHEMA_VERSION = 2
+
+
+class EvidenceSourceRole(StrEnum):
+    INDEPENDENT_PRICE = "independent_price"
+    DEPTH = "depth"
+    AGG_TRADE = "agg_trade"
+    OPEN_INTEREST = "open_interest"
+    FUNDING = "funding"
+    BASIS = "basis"
 
 
 def _require_aware(value: datetime, field: str) -> None:
@@ -33,6 +43,7 @@ def _canonical_json(payload: object) -> str:
 class EvidenceSourceDigest:
     source_id: str
     provider: str
+    role: EvidenceSourceRole
     content_sha256: str
     observed_at: datetime
     available_at: datetime
@@ -41,6 +52,8 @@ class EvidenceSourceDigest:
     def __post_init__(self) -> None:
         if not self.source_id or not self.provider:
             raise ValueError("source_id and provider are required")
+        if not isinstance(self.role, EvidenceSourceRole):
+            raise ValueError("role must be an EvidenceSourceRole")
         if len(self.content_sha256) != 64 or any(
             character not in "0123456789abcdef" for character in self.content_sha256
         ):
@@ -58,6 +71,7 @@ class EvidenceSourceDigest:
         return {
             "source_id": self.source_id,
             "provider": self.provider,
+            "role": self.role.value,
             "content_sha256": self.content_sha256,
             "observed_at": self.observed_at.isoformat(),
             "available_at": self.available_at.isoformat(),
@@ -99,6 +113,59 @@ def _vector_payload(vector: ShadowEvidenceVector) -> dict[str, object]:
     return payload
 
 
+def _required_roles(vector: ShadowEvidenceVector) -> set[EvidenceSourceRole]:
+    roles = {
+        EvidenceSourceRole.INDEPENDENT_PRICE,
+        EvidenceSourceRole.DEPTH,
+        EvidenceSourceRole.AGG_TRADE,
+    }
+    if vector.open_interest_delta_pct is not None:
+        roles.add(EvidenceSourceRole.OPEN_INTEREST)
+    if vector.funding_delta_bps is not None:
+        roles.add(EvidenceSourceRole.FUNDING)
+    if vector.basis_delta_bps is not None:
+        roles.add(EvidenceSourceRole.BASIS)
+    return roles
+
+
+def _normalize_provider(provider: str) -> str:
+    normalized = provider.strip().lower()
+    if not normalized:
+        raise ValueError("provider names must be non-empty")
+    return normalized
+
+
+def _validate_source_coverage(
+    vector: ShadowEvidenceVector,
+    sources: tuple[EvidenceSourceDigest, ...],
+) -> None:
+    roles = {source.role for source in sources}
+    missing_roles = _required_roles(vector) - roles
+    if missing_roles:
+        missing = ", ".join(sorted(role.value for role in missing_roles))
+        raise ValueError(f"required evidence source roles are missing: {missing}")
+
+    vector_providers = {
+        _normalize_provider(provider) for provider in vector.independent_providers
+    }
+    if (
+        len(vector_providers) != vector.independent_provider_count
+        or vector.independent_provider_count < 2
+        or vector.independent_external_provider_count < 1
+    ):
+        raise ValueError("independent consensus provider counts are inconsistent")
+
+    source_providers = {
+        _normalize_provider(source.provider)
+        for source in sources
+        if source.role == EvidenceSourceRole.INDEPENDENT_PRICE
+    }
+    if source_providers != vector_providers:
+        raise ValueError(
+            "independent price source providers must exactly match vector consensus providers"
+        )
+
+
 def build_shadow_evidence_lineage(
     vector: ShadowEvidenceVector,
     sources: tuple[EvidenceSourceDigest, ...],
@@ -120,6 +187,7 @@ def build_shadow_evidence_lineage(
         raise ValueError("source_id values must be unique")
     if any(source.fetched_at > vector.prediction_time for source in ordered_sources):
         raise ValueError("source fetched_at cannot be later than prediction_time")
+    _validate_source_coverage(vector, ordered_sources)
 
     vector_json = _canonical_json(_vector_payload(vector))
     vector_sha256 = sha256(vector_json.encode()).hexdigest()
@@ -161,7 +229,11 @@ def shadow_evidence_graph_document(lineage: ShadowEvidenceLineage) -> GraphDocum
         source_type="shadow_evidence_vector",
         content_sha256=lineage.lineage_sha256,
         temporal=temporal,
-        quality_flags={"UNCALIBRATED_SHADOW_ONLY", "NON_DIRECTIONAL_RESEARCH_ONLY"},
+        quality_flags={
+            "UNCALIBRATED_SHADOW_ONLY",
+            "NON_DIRECTIONAL_RESEARCH_ONLY",
+            "PROVENANCE_SCOPE_COMPLETE",
+        },
     )
     entity = EntityRecord(
         entity_id=f"dataset:{lineage.evidence_id}",
@@ -173,6 +245,9 @@ def shadow_evidence_graph_document(lineage: ShadowEvidenceLineage) -> GraphDocum
             "lineage_sha256": lineage.lineage_sha256,
             "source_digests": {
                 source.source_id: source.content_sha256 for source in lineage.sources
+            },
+            "source_roles": {
+                source.source_id: source.role.value for source in lineage.sources
             },
             "execution_weight": 0.0,
         },
@@ -188,6 +263,7 @@ def shadow_evidence_graph_document(lineage: ShadowEvidenceLineage) -> GraphDocum
             "UNCALIBRATED_SHADOW_ONLY",
             "NON_DIRECTIONAL_RESEARCH_ONLY",
             "EXECUTION_WEIGHT_ZERO",
+            "PROVENANCE_SCOPE_COMPLETE",
         },
     )
     return GraphDocument(
