@@ -54,7 +54,7 @@ def _finite(value: SupportsFloat | None) -> FeatureValue:
 
 def _clean(series: pd.Series) -> pd.Series[float]:
     numeric = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
-    return cast(pd.Series[float], numeric)
+    return cast("pd.Series[float]", numeric)
 
 
 def _return(series: pd.Series, periods: int) -> FeatureValue:
