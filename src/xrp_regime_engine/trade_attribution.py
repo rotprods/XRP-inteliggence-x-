@@ -12,6 +12,7 @@ from xrp_regime_engine.order_flow import OrderFlowState
 class DepthTradeCompatibility:
     symbol: str
     observed_at: datetime
+    prediction_time: datetime | None
     event_end_skew_seconds: float
     window_skew_seconds: float
     depth_window_seconds: float
@@ -123,6 +124,7 @@ def reconcile_depth_with_order_flow(
     flow: OrderFlowState,
     *,
     flow_window_seconds: float | None = None,
+    prediction_time: datetime | None = None,
     max_event_end_skew_seconds: float = 0.5,
     max_window_skew_seconds: float = 0.5,
 ) -> DepthTradeCompatibility:
@@ -141,6 +143,8 @@ def reconcile_depth_with_order_flow(
         _require_positive_finite(value, field)
     if flow_window_seconds is not None:
         _require_positive_finite(flow_window_seconds, "flow_window_seconds")
+    if prediction_time is not None:
+        _require_aware(prediction_time, "prediction_time")
     for field, value in (
         ("dynamics.bid_removed_notional", dynamics.bid_removed_notional),
         ("dynamics.ask_removed_notional", dynamics.ask_removed_notional),
@@ -216,11 +220,32 @@ def reconcile_depth_with_order_flow(
         aligned = False
 
     observed_at = max(depth_end, flow_end)
-    point_in_time_eligible = aligned and provenance_complete and provenance_window_derived
-    if not aligned:
+    future_knowledge_blocked = False
+    prediction_time_safe = False
+    if provenance_complete and provenance_window_derived:
+        if prediction_time is None:
+            flags.append("PREDICTION_TIME_REQUIRED")
+        else:
+            assert dynamics.last_fetched_at is not None
+            assert flow.last_fetched_at is not None
+            latest_fetched_at = max(dynamics.last_fetched_at, flow.last_fetched_at)
+            if observed_at > prediction_time or latest_fetched_at > prediction_time:
+                flags.append("FUTURE_KNOWLEDGE_BLOCKED")
+                future_knowledge_blocked = True
+            else:
+                prediction_time_safe = True
+
+    point_in_time_eligible = (
+        aligned
+        and provenance_complete
+        and provenance_window_derived
+        and prediction_time_safe
+    )
+    if not aligned or future_knowledge_blocked:
         return DepthTradeCompatibility(
             symbol=dynamics.symbol,
             observed_at=observed_at,
+            prediction_time=prediction_time,
             event_end_skew_seconds=event_end_skew,
             window_skew_seconds=window_skew,
             depth_window_seconds=depth_window,
@@ -266,6 +291,7 @@ def reconcile_depth_with_order_flow(
     return DepthTradeCompatibility(
         symbol=dynamics.symbol,
         observed_at=observed_at,
+        prediction_time=prediction_time,
         event_end_skew_seconds=event_end_skew,
         window_skew_seconds=window_skew,
         depth_window_seconds=depth_window,
