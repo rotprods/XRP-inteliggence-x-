@@ -117,9 +117,7 @@ def test_registry_is_deterministic_and_queryable() -> None:
 def test_registry_rejects_authority_and_duplicate_runs() -> None:
     source = matrix()
     with pytest.raises(ValueError, match="non-authoritative"):
-        build_baseline_model_registry(
-            replace(source, probability_calibrated=True)
-        )
+        build_baseline_model_registry(replace(source, probability_calibrated=True))
 
     duplicate = replace(
         source,
@@ -133,18 +131,14 @@ def test_registry_rejects_authoritative_run_and_unknown_cell_run() -> None:
     source = matrix()
     bad_run = replace(source.runs[0], production_ready=True)
     with pytest.raises(ValueError, match="non-authoritative"):
-        build_baseline_model_registry(
-            replace(source, runs=(bad_run,))
-        )
+        build_baseline_model_registry(replace(source, runs=(bad_run,)))
 
     bad_cell = replace(
         source.cells[0],
         run_id="baseline-oos-run:sha256:" + "f" * 64,
     )
     with pytest.raises(ValueError, match="unknown baseline run"):
-        build_baseline_model_registry(
-            replace(source, cells=(bad_cell,))
-        )
+        build_baseline_model_registry(replace(source, cells=(bad_cell,)))
 
 
 def test_registry_rejects_challenger_without_eligible_skill() -> None:
