@@ -25,6 +25,13 @@ class DepthDynamics:
     churn_quote_per_second: float
     trade_attribution_confirmed: bool
     quality_flags: tuple[str, ...]
+    first_observed_at: datetime | None = None
+    last_observed_at: datetime | None = None
+    first_available_at: datetime | None = None
+    last_available_at: datetime | None = None
+    first_fetched_at: datetime | None = None
+    last_fetched_at: datetime | None = None
+    provenance_complete: bool = False
     execution_weight: float = 0.0
 
 
@@ -78,7 +85,10 @@ def apply_delta_with_dynamics(
     if delta.final_update_id <= book.last_update_id:
         return None
 
-    elapsed_seconds = (delta.observed_at - book.observed_at).total_seconds()
+    first_observed_at = book.observed_at
+    first_available_at = book.available_at
+    first_fetched_at = book.fetched_at
+    elapsed_seconds = (delta.observed_at - first_observed_at).total_seconds()
     if elapsed_seconds <= 0:
         book.synchronized = False
         raise BookSequenceError("depth event time must advance monotonically")
@@ -96,7 +106,18 @@ def apply_delta_with_dynamics(
     book.apply_delta(delta)
 
     gross_churn = bid_added + bid_removed + ask_added + ask_removed
+    provenance_complete = all(
+        value is not None
+        for value in (
+            first_available_at,
+            first_fetched_at,
+            delta.available_at,
+            delta.fetched_at,
+        )
+    )
     flags: list[str] = ["TRADE_ATTRIBUTION_REQUIRED"]
+    if not provenance_complete:
+        flags.append("POINT_IN_TIME_PROVENANCE_INCOMPLETE")
     if gross_churn == 0:
         flags.append("NO_DISPLAYED_DEPTH_CHANGE")
 
@@ -116,5 +137,12 @@ def apply_delta_with_dynamics(
         churn_quote_per_second=gross_churn / elapsed_seconds,
         trade_attribution_confirmed=False,
         quality_flags=tuple(flags),
+        first_observed_at=first_observed_at,
+        last_observed_at=delta.observed_at,
+        first_available_at=first_available_at,
+        last_available_at=delta.available_at,
+        first_fetched_at=first_fetched_at,
+        last_fetched_at=delta.fetched_at,
+        provenance_complete=provenance_complete,
         execution_weight=0.0,
     )
