@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
+from typing import cast
 
 from xrp_regime_engine.baseline_models_v1 import (
     BaselineKind,
@@ -19,6 +20,8 @@ from xrp_regime_engine.calibration_evidence_v1 import (
 from xrp_regime_engine.future_labels_v1 import FutureOutcomeLabel
 from xrp_regime_engine.historical_features_v1 import HistoricalFeatureRow
 from xrp_regime_engine.oos_predictions_v1 import (
+    FoldPlanLike,
+    FutureOutcomeLabelLike,
     OOSPrediction,
     ResolvedOOSOutcome,
     resolve_oos_outcome,
@@ -248,7 +251,7 @@ def run_baseline_oos_factory(
             for row in test_rows:
                 score = model.predict(row.feature)
                 prediction = OOSPrediction.build(
-                    fold=fold,
+                    fold=cast(FoldPlanLike, fold),
                     feature_row_id=row.feature.feature_row_id,
                     prediction_time=row.feature.prediction_time,
                     horizon=row.feature.horizon,
@@ -261,7 +264,10 @@ def run_baseline_oos_factory(
                     source_snapshot_ids=row.feature.source_snapshot_ids,
                     raw_score=score,
                 )
-                outcome = resolve_oos_outcome(prediction, row.label)
+                outcome = resolve_oos_outcome(
+                    prediction,
+                    cast(FutureOutcomeLabelLike, row.label),
+                )
                 predictions.append(prediction)
                 outcomes.append(outcome)
 
