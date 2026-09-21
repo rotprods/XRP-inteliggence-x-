@@ -4,7 +4,7 @@ import json
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
 
@@ -72,7 +72,7 @@ class AnalogSearchConfig:
 @dataclass(frozen=True, slots=True)
 class HistoricalAnalogMatch:
     state_id: str
-    prediction_time: object
+    prediction_time: datetime
     regime: CanonicalRegime
     distance: float
     similarity: float
