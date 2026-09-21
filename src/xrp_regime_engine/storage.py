@@ -5,10 +5,12 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
+from xrp_regime_engine.evidence_lineage import ShadowEvidenceLineage
 from xrp_regime_engine.models import ProviderHealth, RegimeSnapshot
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_metadata (
   key TEXT PRIMARY KEY,
@@ -41,6 +43,18 @@ CREATE TABLE IF NOT EXISTS provider_health (
 );
 CREATE INDEX IF NOT EXISTS idx_health_latest
   ON provider_health(provider, checked_at DESC);
+
+CREATE TABLE IF NOT EXISTS shadow_evidence_lineage (
+  evidence_id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  prediction_time TEXT NOT NULL,
+  vector_sha256 TEXT NOT NULL,
+  lineage_sha256 TEXT NOT NULL UNIQUE,
+  source_ids_json TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shadow_evidence_time
+  ON shadow_evidence_lineage(symbol, prediction_time DESC);
 
 CREATE TABLE IF NOT EXISTS audit_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,6 +176,61 @@ class SQLiteStore:
                     ),
                 ),
             )
+
+    def save_shadow_evidence_lineage(self, lineage: ShadowEvidenceLineage) -> None:
+        payload = lineage.to_json()
+        with self.connection() as conn:
+            existing = conn.execute(
+                "SELECT payload_json FROM shadow_evidence_lineage WHERE evidence_id=?",
+                (lineage.evidence_id,),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["payload_json"]) != payload:
+                    raise ValueError("evidence_id collision with different lineage payload")
+                return
+            conn.execute(
+                """INSERT INTO shadow_evidence_lineage
+                (evidence_id, symbol, prediction_time, vector_sha256, lineage_sha256,
+                 source_ids_json, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    lineage.evidence_id,
+                    lineage.vector.symbol,
+                    lineage.vector.prediction_time.isoformat(),
+                    lineage.vector_sha256,
+                    lineage.lineage_sha256,
+                    json.dumps(lineage.source_ids, separators=(",", ":")),
+                    payload,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO audit_events(event_type, payload_json) VALUES (?, ?)",
+                (
+                    "shadow_evidence_lineage_saved",
+                    json.dumps(
+                        {
+                            "evidence_id": lineage.evidence_id,
+                            "lineage_sha256": lineage.lineage_sha256,
+                            "symbol": lineage.vector.symbol,
+                            "prediction_time": lineage.vector.prediction_time.isoformat(),
+                        },
+                        sort_keys=True,
+                    ),
+                ),
+            )
+
+    def load_shadow_evidence_lineage_payload(
+        self,
+        evidence_id: str,
+    ) -> dict[str, object] | None:
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM shadow_evidence_lineage WHERE evidence_id=?",
+                (evidence_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return cast(dict[str, object], json.loads(str(row["payload_json"])))
 
     def latest_snapshot(self, asset: str = "XRP", horizon: str = "1d") -> RegimeSnapshot | None:
         with self.connection() as conn:
