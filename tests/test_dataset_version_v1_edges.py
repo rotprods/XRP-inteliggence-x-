@@ -4,7 +4,11 @@ from hashlib import sha256
 
 import pytest
 
-from xrp_regime_engine.dataset_version_v1 import DatasetVersion, ProviderCoverage, build_dataset_version
+from xrp_regime_engine.dataset_version_v1 import (
+    DatasetVersion,
+    ProviderCoverage,
+    build_dataset_version,
+)
 from xrp_regime_engine.historical_contract import (
     AvailabilityPrecision,
     FetchReceipt,
