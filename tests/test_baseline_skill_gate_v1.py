@@ -252,6 +252,7 @@ def test_factory_executes_all_baselines_and_freezes_oos_records() -> None:
     assert skill[BaselineKind.B3_MEAN_REVERSION].state is BaselineSkillState.REJECTED
     assert skill[BaselineKind.B2_MOMENTUM].brier_score < skill[BaselineKind.B0_BASE_RATE].brier_score
     assert result.development_challenger in {
+        BaselineKind.B1_PERSISTENCE,
         BaselineKind.B2_MOMENTUM,
         BaselineKind.B4_LOGISTIC_L2,
     }
