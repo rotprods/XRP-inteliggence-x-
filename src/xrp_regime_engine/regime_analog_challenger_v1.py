@@ -23,6 +23,7 @@ from xrp_regime_engine.historical_analog_v1 import (
     AnalogSearchConfig,
     AnalogSearchStatus,
     DistanceMetric,
+    HistoricalAnalogMatch,
     search_historical_analogs,
     run_analog_sensitivity,
 )
@@ -189,6 +190,8 @@ def _validate_baseline_run(
         or baseline_run.execution_weight != 0.0
     ):
         raise ValueError("baseline run must remain non-authoritative")
+    if not baseline_run.dataset_version_id.startswith("dataset-version:sha256:"):
+        raise ValueError("baseline run lacks DatasetVersion identity")
     if baseline_run.event_key != event_key:
         raise ValueError("baseline run event_key mismatch")
     if not folds:
@@ -253,7 +256,7 @@ def _fit_id(
 
 
 def _weighted_probability(
-    report_matches: Sequence[object],
+    report_matches: Sequence[HistoricalAnalogMatch],
     state_to_row: Mapping[str, LabeledFeatureRow],
     *,
     event_key: str,
@@ -264,9 +267,9 @@ def _weighted_probability(
     total_weight = prior_strength
     state_ids: list[str] = []
     feature_ids: list[str] = []
-    for raw_match in report_matches:
-        state_id = str(getattr(raw_match, "state_id"))
-        similarity = float(getattr(raw_match, "similarity"))
+    for match in report_matches:
+        state_id = match.state_id
+        similarity = match.similarity
         if not math.isfinite(similarity) or similarity <= 0:
             raise ValueError("analog similarity must be finite and positive")
         row = state_to_row.get(state_id)
