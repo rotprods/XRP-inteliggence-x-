@@ -228,8 +228,7 @@ def test_regime_analog_challenger_beats_h6_on_same_oos_subset() -> None:
         )
         assert lineage.model_fit_id.startswith("regime-analog-fit:sha256:")
     assert all(
-        item.model_version.startswith("regime-analog-fit:sha256:")
-        for item in result.predictions
+        item.model_version.startswith("regime-analog-fit:sha256:") for item in result.predictions
     )
 
 
@@ -280,14 +279,10 @@ def test_missing_required_signal_suppresses_without_peeking_at_outcome() -> None
     )
     assert suppression.reasons
     assert any(
-        reason.startswith("QUERY_REGIME_NO_DATA")
-        or reason.startswith("MISSING_REQUIRED_SIGNALS")
+        reason.startswith("QUERY_REGIME_NO_DATA") or reason.startswith("MISSING_REQUIRED_SIGNALS")
         for reason in suppression.reasons
     )
-    assert all(
-        item.feature_row_id != missing_feature_id
-        for item in result.predictions
-    )
+    assert all(item.feature_row_id != missing_feature_id for item in result.predictions)
 
 
 def test_performance_gate_can_return_no_demonstrated_regime_skill() -> None:
