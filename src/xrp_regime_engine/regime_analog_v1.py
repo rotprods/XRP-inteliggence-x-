@@ -119,9 +119,24 @@ class RegimeThresholds:
     distribution_depth: float = -0.20
 
     def __post_init__(self) -> None:
-        for field_name in self.__dataclass_fields__:
+        for field_name in (
+            "breakout_return",
+            "recovery_return",
+            "capitulation_return",
+            "flat_abs_return",
+            "relative_strength",
+            "positive_flow",
+            "negative_flow",
+            "oi_expansion",
+            "oi_deleveraging",
+            "elevated_funding",
+            "crowded_funding",
+            "liquidation_stress",
+            "supportive_depth",
+            "distribution_depth",
+        ):
             _finite(float(getattr(self, field_name)), field_name)
-        if self.breakout_return <= self.recovery_return <= 0:
+        if self.breakout_return <= self.recovery_return or self.recovery_return <= 0:
             raise ValueError("breakout/recovery thresholds are inconsistent")
         if self.capitulation_return >= 0:
             raise ValueError("capitulation_return must be negative")
@@ -182,14 +197,20 @@ def classify_regime_candidate(
     if missing:
         reasons = ("MISSING_REQUIRED_REGIME_FEATURES",)
     else:
-        short = float(values["short_return"])
-        medium = float(values["medium_return"])
-        relative = float(values["relative_strength"])
-        flow = float(values["spot_flow"])
-        oi_change = float(values["open_interest_change"])
-        funding = float(values["funding"])
-        liquidations = float(values["liquidation_stress"])
-        depth = float(values["depth_imbalance"])
+        def required_value(name: str) -> float:
+            value = values[name]
+            if value is None:
+                raise RuntimeError("missingness gate failed to narrow required regime feature")
+            return value
+
+        short = required_value("short_return")
+        medium = required_value("medium_return")
+        relative = required_value("relative_strength")
+        flow = required_value("spot_flow")
+        oi_change = required_value("open_interest_change")
+        funding = required_value("funding")
+        liquidations = required_value("liquidation_stress")
+        depth = required_value("depth_imbalance")
 
         if medium <= selected.capitulation_return and liquidations >= selected.liquidation_stress:
             regime = HistoricalRegime.CAPITULATION
