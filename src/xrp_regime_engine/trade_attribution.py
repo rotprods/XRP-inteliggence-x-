@@ -40,6 +40,11 @@ def _require_positive_finite(value: float, field: str) -> None:
         raise ValueError(f"{field} must be finite and positive")
 
 
+def _require_non_negative_finite(value: float, field: str) -> None:
+    if not isfinite(value) or value < 0:
+        raise ValueError(f"{field} must be finite and non-negative")
+
+
 def reconcile_depth_with_order_flow(
     dynamics: DepthDynamics,
     flow: OrderFlowState,
@@ -58,8 +63,16 @@ def reconcile_depth_with_order_flow(
         ("flow_window_seconds", flow_window_seconds),
         ("max_event_end_skew_seconds", max_event_end_skew_seconds),
         ("max_window_skew_seconds", max_window_skew_seconds),
+        ("dynamics.elapsed_seconds", dynamics.elapsed_seconds),
     ):
         _require_positive_finite(value, field)
+    for field, value in (
+        ("dynamics.bid_removed_notional", dynamics.bid_removed_notional),
+        ("dynamics.ask_removed_notional", dynamics.ask_removed_notional),
+        ("flow.aggressive_buy_notional", flow.aggressive_buy_notional),
+        ("flow.aggressive_sell_notional", flow.aggressive_sell_notional),
+    ):
+        _require_non_negative_finite(value, field)
     _require_aware(dynamics.observed_at, "dynamics.observed_at")
     _require_aware(flow.observed_at, "flow.observed_at")
     if dynamics.symbol != flow.symbol:
@@ -76,19 +89,17 @@ def reconcile_depth_with_order_flow(
         flags.append("CROSS_STREAM_WINDOW_MISALIGNED")
         aligned = False
 
-    common = dict(
-        symbol=dynamics.symbol,
-        observed_at=max(dynamics.observed_at, flow.observed_at),
-        event_end_skew_seconds=event_end_skew,
-        window_skew_seconds=window_skew,
-        bid_removed_notional=dynamics.bid_removed_notional,
-        ask_removed_notional=dynamics.ask_removed_notional,
-        aggressive_buy_notional=flow.aggressive_buy_notional,
-        aggressive_sell_notional=flow.aggressive_sell_notional,
-    )
+    observed_at = max(dynamics.observed_at, flow.observed_at)
     if not aligned:
         return DepthTradeCompatibility(
-            **common,
+            symbol=dynamics.symbol,
+            observed_at=observed_at,
+            event_end_skew_seconds=event_end_skew,
+            window_skew_seconds=window_skew,
+            bid_removed_notional=dynamics.bid_removed_notional,
+            ask_removed_notional=dynamics.ask_removed_notional,
+            aggressive_buy_notional=flow.aggressive_buy_notional,
+            aggressive_sell_notional=flow.aggressive_sell_notional,
             bid_trade_compatible_notional=None,
             ask_trade_compatible_notional=None,
             trade_compatible_removed_notional=None,
@@ -122,7 +133,14 @@ def reconcile_depth_with_order_flow(
         flags.append("AGGRESSIVE_TRADE_EXCEEDS_DISPLAYED_REMOVAL")
 
     return DepthTradeCompatibility(
-        **common,
+        symbol=dynamics.symbol,
+        observed_at=observed_at,
+        event_end_skew_seconds=event_end_skew,
+        window_skew_seconds=window_skew,
+        bid_removed_notional=dynamics.bid_removed_notional,
+        ask_removed_notional=dynamics.ask_removed_notional,
+        aggressive_buy_notional=flow.aggressive_buy_notional,
+        aggressive_sell_notional=flow.aggressive_sell_notional,
         bid_trade_compatible_notional=bid_compatible,
         ask_trade_compatible_notional=ask_compatible,
         trade_compatible_removed_notional=compatible_removed,
