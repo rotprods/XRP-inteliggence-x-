@@ -24,6 +24,7 @@ from xrp_regime_engine.oos_predictions_v1 import (
     ResolvedOOSOutcome,
     resolve_oos_outcome,
 )
+from xrp_regime_engine.research_horizon import ResearchHorizon
 from xrp_regime_engine.walk_forward_v1 import (
     LabeledFeatureRow,
     WalkForwardFoldPlan,
@@ -70,10 +71,12 @@ class BaselineModelSkill:
 class BaselineOOSRun:
     run_id: str
     run_sha256: str
+    dataset_version_id: str
     event_key: str
-    horizon: str
+    horizon: ResearchHorizon
     model_kinds: tuple[BaselineKind, ...]
     fold_ids: tuple[str, ...]
+    model_fit_ids: tuple[str, ...]
     predictions: tuple[OOSPrediction, ...]
     outcomes: tuple[ResolvedOOSOutcome, ...]
     skills: tuple[BaselineModelSkill, ...]
@@ -83,6 +86,15 @@ class BaselineOOSRun:
     production_ready: bool = False
     decision_authority: bool = False
     execution_weight: float = 0.0
+
+
+def _content_id(value: str, prefix: str, field: str) -> str:
+    if not value.startswith(prefix):
+        raise ValueError(f"{field} must use {prefix}<digest>")
+    digest = value.removeprefix(prefix)
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise ValueError(f"{field} must contain a lowercase SHA-256 digest")
+    return value
 
 
 def _canonical(payload: object) -> str:
@@ -195,6 +207,7 @@ def _skill_entry(
 
 def run_baseline_oos_factory(
     *,
+    dataset_version_id: str,
     features: Sequence[HistoricalFeatureRow],
     labels: Sequence[FutureOutcomeLabel],
     folds: Sequence[WalkForwardFoldPlan],
@@ -205,6 +218,11 @@ def run_baseline_oos_factory(
     training_policy: BaselineTrainingPolicy | None = None,
     skill_policy: BaselineSkillPolicy | None = None,
 ) -> BaselineOOSRun:
+    dataset_id = _content_id(
+        dataset_version_id,
+        "dataset-version:sha256:",
+        "dataset_version_id",
+    )
     if not event_key.strip():
         raise ValueError("event_key is required")
     ordered_folds = _validate_folds(folds)
@@ -219,6 +237,7 @@ def run_baseline_oos_factory(
 
     predictions: list[OOSPrediction] = []
     outcomes: list[ResolvedOOSOutcome] = []
+    fit_ids: list[str] = []
     for fold in ordered_folds:
         train_rows, test_rows = _fold_rows(fold, rows)
         for kind in kinds:
@@ -230,6 +249,7 @@ def run_baseline_oos_factory(
                 momentum_feature_key=momentum_feature_key,
                 policy=selected_training_policy,
             )
+            fit_ids.append(model.fit_id)
             for row in test_rows:
                 score = model.predict(row.feature)
                 prediction = OOSPrediction.build(
@@ -239,7 +259,7 @@ def run_baseline_oos_factory(
                     horizon=row.feature.horizon,
                     event_key=event_key,
                     model_id=f"baseline:{kind.value}",
-                    model_version="baseline-v1",
+                    model_version=model.fit_id,
                     model_training_cutoff=fold.cutoff_at,
                     feature_schema_version=row.feature.feature_schema_version,
                     provider_universe_version=row.feature.provider_universe_version,
@@ -279,10 +299,12 @@ def run_baseline_oos_factory(
         else None
     )
     material: dict[str, object] = {
+        "dataset_version_id": dataset_id,
         "event_key": event_key,
         "horizon": ordered_folds[0].horizon.value,
         "model_kinds": [item.value for item in kinds],
         "fold_ids": [item.fold_id for item in ordered_folds],
+        "model_fit_ids": sorted(set(fit_ids)),
         "prediction_ids": [item.prediction_id for item in predictions],
         "outcome_ids": [item.outcome_id for item in outcomes],
         "skills": [
@@ -309,10 +331,12 @@ def run_baseline_oos_factory(
     return BaselineOOSRun(
         run_id=f"baseline-oos-run:sha256:{digest}",
         run_sha256=digest,
+        dataset_version_id=dataset_id,
         event_key=event_key,
-        horizon=ordered_folds[0].horizon.value,
+        horizon=ordered_folds[0].horizon,
         model_kinds=kinds,
         fold_ids=tuple(item.fold_id for item in ordered_folds),
+        model_fit_ids=tuple(sorted(set(fit_ids))),
         predictions=tuple(predictions),
         outcomes=tuple(outcomes),
         skills=skills,
