@@ -9,10 +9,9 @@ from collections.abc import Iterator
 import numpy as np
 import pytest
 
-
-
 try:
-    from hypothesis import HealthCheck, settings as hypothesis_settings
+    from hypothesis import HealthCheck
+    from hypothesis import settings as hypothesis_settings
 except ImportError:  # local recovery runtimes may not have optional Q1 tooling installed
     hypothesis_settings = None
 else:
@@ -70,8 +69,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-
-
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Deterministically permute test order when the flake gate supplies a seed."""
 
@@ -83,6 +80,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     except ValueError as exc:
         raise pytest.UsageError("Q1_TEST_ORDER_SEED must be an integer") from exc
     random.Random(seed).shuffle(items)
+
 
 def pytest_configure(config: pytest.Config) -> None:
     for marker in (

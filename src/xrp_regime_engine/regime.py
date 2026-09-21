@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from statistics import pstdev
-from typing import Iterable
 
 from xrp_regime_engine.models import (
     ComponentScores,
@@ -14,7 +14,6 @@ from xrp_regime_engine.models import (
     RegimeLabel,
     RegimeSnapshot,
 )
-
 
 FeatureMap = dict[str, float | None]
 

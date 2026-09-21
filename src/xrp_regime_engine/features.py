@@ -6,7 +6,6 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-
 FeatureValue = float | None
 
 REQUIRED_COLUMNS = frozenset(

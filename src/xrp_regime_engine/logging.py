@@ -6,7 +6,6 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-
 _KEY_VALUE_SECRET = re.compile(
     r"(?i)\b(api[_-]?key|token|secret|authorization|password)\s*[:=]\s*([^\s,&]+)"
 )

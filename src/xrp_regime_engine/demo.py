@@ -6,7 +6,6 @@ from types import MappingProxyType
 import numpy as np
 import pandas as pd
 
-
 DEMO_END = datetime(2026, 8, 24, tzinfo=UTC)
 DEMO_SUPPLEMENTAL_FEATURES = MappingProxyType(
     {

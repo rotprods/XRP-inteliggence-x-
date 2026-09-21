@@ -1,6 +1,6 @@
+from copy import deepcopy
 
 import pytest
-from copy import deepcopy
 
 from xrp_regime_engine.demo import DEMO_SUPPLEMENTAL_FEATURES, generate_demo_frame
 from xrp_regime_engine.features import compute_features
@@ -80,8 +80,8 @@ def test_historical_analogues_ignore_missing_and_empty_feature_sets() -> None:
 
 
 def test_low_directional_coverage_blocks_output() -> None:
+    from xrp_regime_engine.models import DataFlag, Horizon
     from xrp_regime_engine.regime import score_regime
-    from xrp_regime_engine.models import Horizon, DataFlag
 
     features = {
         "provider_agreement": 1.0,
@@ -97,8 +97,8 @@ def test_low_directional_coverage_blocks_output() -> None:
 
 
 def test_strong_bear_regime_is_reachable_with_complete_extreme_features() -> None:
-    from xrp_regime_engine.regime import score_regime
     from xrp_regime_engine.models import Horizon, RegimeLabel
+    from xrp_regime_engine.regime import score_regime
 
     features = {
         "feature_cadence_seconds": 86400.0,

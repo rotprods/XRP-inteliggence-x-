@@ -7,7 +7,11 @@ import httpx
 import pytest
 
 from xrp_regime_engine.models import Candle
-from xrp_regime_engine.providers.base import MarketDataProvider, ProviderError, RetryableProviderError
+from xrp_regime_engine.providers.base import (
+    MarketDataProvider,
+    ProviderError,
+    RetryableProviderError,
+)
 
 pytestmark = [pytest.mark.contract, pytest.mark.security]
 

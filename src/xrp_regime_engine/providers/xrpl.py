@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from xrp_regime_engine.models import AssetObservation, Candle, ProviderHealth, Provenance
+from xrp_regime_engine.models import AssetObservation, Candle, Provenance, ProviderHealth
 from xrp_regime_engine.providers.base import MarketDataProvider, ProviderError
 
 

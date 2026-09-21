@@ -5,11 +5,11 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
+from xrp_regime_engine.providers.base import ProviderError
 from xrp_regime_engine.providers.binance import BinanceSpotProvider
 from xrp_regime_engine.providers.coinbase import CoinbaseExchangeProvider
 from xrp_regime_engine.providers.fred import FredProvider
 from xrp_regime_engine.providers.kraken import KrakenSpotProvider
-from xrp_regime_engine.providers.base import ProviderError
 
 
 def _milliseconds(value: datetime) -> int:

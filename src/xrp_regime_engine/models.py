@@ -8,7 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
