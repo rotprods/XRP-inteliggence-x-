@@ -6,8 +6,7 @@ from xrp_regime_engine.logging import JsonFormatter, redact_secrets
 
 def test_redact_secrets_covers_headers_query_and_key_values() -> None:
     text = (
-        "Bearer abc.def token=TOKEN123 "
-        "https://example.test/path?api_key=SECRET&x=1 password:pass"
+        "Bearer abc.def token=TOKEN123 https://example.test/path?api_key=SECRET&x=1 password:pass"
     )
     redacted = redact_secrets(text)
     assert "abc.def" not in redacted

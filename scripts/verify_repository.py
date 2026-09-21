@@ -34,9 +34,7 @@ GENERATED_PARTS = {
     "dist-b",
 }
 RUNTIME_SUFFIXES = {".pyc", ".pyo", ".sqlite3", ".db"}
-ACTION_REF_PATTERN = re.compile(
-    r"(?m)^\s*uses:\s*(?P<action>[^@\s]+)@(?P<ref>[^\s#]+)(?:\s+#.*)?$"
-)
+ACTION_REF_PATTERN = re.compile(r"(?m)^\s*uses:\s*(?P<action>[^@\s]+)@(?P<ref>[^\s#]+)(?:\s+#.*)?$")
 
 
 def _git_visible_paths(root: Path) -> list[Path] | None:
@@ -177,7 +175,9 @@ def verify(root: Path = ROOT) -> dict[str, object]:
         "workflow_count": len(workflows),
         "manifest_ok": manifest_ok,
         "read_only_boundary": True,
-        "verification_scope": "git_visible" if _git_visible_paths(root) is not None else "filesystem",
+        "verification_scope": "git_visible"
+        if _git_visible_paths(root) is not None
+        else "filesystem",
         "cost_guardrail": {
             "workflow_count": len(workflows),
             "standard_runner_only": True,

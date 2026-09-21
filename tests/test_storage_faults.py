@@ -36,9 +36,7 @@ def test_latest_queries_return_empty_when_no_data(tmp_path: Path) -> None:
 def test_transaction_rolls_back_on_exception(tmp_path: Path) -> None:
     store = SQLiteStore(tmp_path / "x.db")
     with pytest.raises(RuntimeError), store.connection() as conn:
-        conn.execute(
-            "INSERT INTO audit_events(event_type, payload_json) VALUES ('test', '{}')"
-        )
+        conn.execute("INSERT INTO audit_events(event_type, payload_json) VALUES ('test', '{}')")
         raise RuntimeError("boom")
     assert store.audit_event_count() == 0
 

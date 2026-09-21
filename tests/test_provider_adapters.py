@@ -49,14 +49,10 @@ async def test_binance_keeps_usdt_semantics_separate_from_usd() -> None:
 @pytest.mark.asyncio
 async def test_coinbase_and_kraken_parse_closed_usd_candles() -> None:
     open_time = datetime.now(UTC) - timedelta(hours=2)
-    coinbase_payload = [
-        [int(open_time.timestamp()), 0.9, 1.2, 1.0, 1.1, 100.0]
-    ]
+    coinbase_payload = [[int(open_time.timestamp()), 0.9, 1.2, 1.0, 1.1, 100.0]]
     coinbase = CoinbaseExchangeProvider(
         "https://api.exchange.coinbase.com",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json=coinbase_payload)
-        ),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=coinbase_payload)),
     )
     try:
         coinbase_candles = await coinbase.fetch_candles("XRP_USD", "1h", 1)
@@ -83,9 +79,7 @@ async def test_coinbase_and_kraken_parse_closed_usd_candles() -> None:
     }
     kraken = KrakenSpotProvider(
         "https://api.kraken.com",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json=kraken_payload)
-        ),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=kraken_payload)),
     )
     try:
         kraken_candles = await kraken.fetch_candles("XRP_USD", "1h", 1)

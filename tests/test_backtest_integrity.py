@@ -27,7 +27,9 @@ def test_walk_forward_rejects_insufficient_outcomes() -> None:
         backtest.expanding_walk_forward(generate_demo_frame(365), min_train=365)
 
 
-def test_walk_forward_compute_features_never_receives_future_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_walk_forward_compute_features_never_receives_future_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     frame = generate_demo_frame(430)
     original = backtest.compute_features
     seen_max: list[pd.Timestamp] = []

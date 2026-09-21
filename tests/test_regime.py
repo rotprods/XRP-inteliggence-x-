@@ -9,9 +9,7 @@ from xrp_regime_engine.regime import score_regime
 
 
 def _demo_features() -> dict[str, float | None]:
-    return compute_features(
-        generate_demo_frame(), supplemental=DEMO_SUPPLEMENTAL_FEATURES
-    )
+    return compute_features(generate_demo_frame(), supplemental=DEMO_SUPPLEMENTAL_FEATURES)
 
 
 def test_regime_snapshot_is_bounded_and_semantically_split() -> None:

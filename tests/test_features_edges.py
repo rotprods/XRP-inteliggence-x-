@@ -57,7 +57,9 @@ def test_interval_and_annualized_volatility_edge_cases() -> None:
     assert f._annualized_volatility(series(list(range(1, 11))), idx, window=30) is None
 
 
-def test_validate_frame_rejects_empty_non_datetime_non_monotonic_duplicates_and_wrong_cadence() -> None:
+def test_validate_frame_rejects_empty_non_datetime_non_monotonic_duplicates_and_wrong_cadence() -> (
+    None
+):
     with pytest.raises(ValueError, match="cannot be empty"):
         f._validate_frame(pd.DataFrame())
     with pytest.raises(ValueError, match="DatetimeIndex"):

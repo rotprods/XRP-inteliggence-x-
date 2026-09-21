@@ -160,9 +160,7 @@ class SQLiteStore:
                 ),
             )
 
-    def latest_snapshot(
-        self, asset: str = "XRP", horizon: str = "1d"
-    ) -> RegimeSnapshot | None:
+    def latest_snapshot(self, asset: str = "XRP", horizon: str = "1d") -> RegimeSnapshot | None:
         with self.connection() as conn:
             row = conn.execute(
                 """SELECT payload_json FROM regime_snapshots

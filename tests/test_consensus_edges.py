@@ -12,7 +12,14 @@ pytestmark = [pytest.mark.unit, pytest.mark.contract]
 NOW = datetime(2026, 8, 28, 9, 0, tzinfo=UTC)
 
 
-def c(provider: str, close: float, *, minutes_ago: int = 0, asset: str = "XRP_USD", interval: str = "1h") -> Candle:
+def c(
+    provider: str,
+    close: float,
+    *,
+    minutes_ago: int = 0,
+    asset: str = "XRP_USD",
+    interval: str = "1h",
+) -> Candle:
     close_time = NOW - timedelta(minutes=minutes_ago)
     return Candle(
         asset=asset,
@@ -43,7 +50,9 @@ def c(provider: str, close: float, *, minutes_ago: int = 0, asset: str = "XRP_US
         ({"outlier_deviation": 0}, "spread thresholds"),
     ],
 )
-def test_consensus_rejects_invalid_configuration(kwargs: dict[str, float | int], message: str) -> None:
+def test_consensus_rejects_invalid_configuration(
+    kwargs: dict[str, float | int], message: str
+) -> None:
     candles = [] if not kwargs else [c("a", 1), c("b", 1)]
     with pytest.raises(ValueError, match=message):
         consensus_close(candles, now=NOW, **kwargs)
