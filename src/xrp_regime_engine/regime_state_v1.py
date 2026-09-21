@@ -291,16 +291,12 @@ def classify_regime(
         if value is not None:
             extracted[spec.signal] = value
     coverage = len(extracted) / len(selected.specs)
-    missing_required = tuple(
-        sorted(set(selected.required_signals) - set(extracted))
-    )
+    missing_required = tuple(sorted(set(selected.required_signals) - set(extracted)))
     reasons: list[str] = []
 
     if missing_required:
         regime = CanonicalRegime.NO_DATA
-        reasons.append(
-            "MISSING_REQUIRED_SIGNALS:" + ",".join(missing_required)
-        )
+        reasons.append("MISSING_REQUIRED_SIGNALS:" + ",".join(missing_required))
     elif coverage < selected.min_signal_coverage:
         regime = CanonicalRegime.NO_DATA
         reasons.append("INSUFFICIENT_SIGNAL_COVERAGE")
@@ -327,16 +323,12 @@ def classify_regime(
             and drawdown >= selected.capitulation_drawdown_threshold
         ):
             regime = CanonicalRegime.CAPITULATION
-        elif (
-            crowding >= selected.crowding_threshold
-            and leverage >= selected.leverage_threshold
-        ):
+        elif crowding >= selected.crowding_threshold and leverage >= selected.leverage_threshold:
             regime = CanonicalRegime.LONG_CROWDING
         elif distribution >= selected.distribution_threshold:
             regime = CanonicalRegime.DISTRIBUTION
         elif (
-            breakout >= selected.breakout_threshold
-            and trend >= selected.expansion_trend_threshold
+            breakout >= selected.breakout_threshold and trend >= selected.expansion_trend_threshold
         ):
             regime = CanonicalRegime.BREAKOUT
         elif (
@@ -351,10 +343,7 @@ def classify_regime(
             and crowding < selected.crowding_threshold
         ):
             regime = CanonicalRegime.LEVERAGED_EXPANSION
-        elif (
-            trend >= selected.recovery_trend_threshold
-            and drawdown >= 0.30
-        ):
+        elif trend >= selected.recovery_trend_threshold and drawdown >= 0.30:
             regime = CanonicalRegime.RECOVERY
         elif (
             liquidity >= selected.risk_on_liquidity_threshold
@@ -374,9 +363,13 @@ def classify_regime(
             reasons.append("NO_RULE_WITH_SUFFICIENT_SEPARATION")
 
     max_strength = max((abs(value) for value in extracted.values()), default=0.0)
-    confidence = 0.0 if regime is CanonicalRegime.NO_DATA else min(
-        1.0,
-        coverage * (0.5 + 0.5 * max_strength),
+    confidence = (
+        0.0
+        if regime is CanonicalRegime.NO_DATA
+        else min(
+            1.0,
+            coverage * (0.5 + 0.5 * max_strength),
+        )
     )
     payload = {
         "feature_row_id": feature.feature_row_id,
