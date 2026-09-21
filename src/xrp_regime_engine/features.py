@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from typing import SupportsFloat, cast
 
 import numpy as np
 import pandas as pd
@@ -44,23 +45,24 @@ DAILY_CADENCE_MIN_SECONDS = 18 * 60 * 60
 DAILY_CADENCE_MAX_SECONDS = 30 * 60 * 60
 
 
-def _finite(value: float | int | np.floating[object] | None) -> FeatureValue:
+def _finite(value: SupportsFloat | None) -> FeatureValue:
     if value is None:
         return None
     candidate = float(value)
     return candidate if math.isfinite(candidate) else None
 
 
-def _clean(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+def _clean(series: pd.Series) -> pd.Series[float]:
+    numeric = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    return cast(pd.Series[float], numeric)
 
 
 def _return(series: pd.Series, periods: int) -> FeatureValue:
     clean = _clean(series)
     if periods < 1 or len(clean) <= periods:
         return None
-    base = float(clean.iloc[-periods - 1])
-    latest = float(clean.iloc[-1])
+    base = clean.iloc[-periods - 1]
+    latest = clean.iloc[-1]
     if base == 0:
         return None
     return _finite(latest / base - 1)
@@ -70,7 +72,7 @@ def _absolute_change(series: pd.Series, periods: int) -> FeatureValue:
     clean = _clean(series)
     if periods < 1 or len(clean) <= periods:
         return None
-    return _finite(float(clean.iloc[-1] - clean.iloc[-periods - 1]))
+    return _finite(clean.iloc[-1] - clean.iloc[-periods - 1])
 
 
 def _zscore(series: pd.Series, window: int) -> FeatureValue:
@@ -82,7 +84,7 @@ def _zscore(series: pd.Series, window: int) -> FeatureValue:
         return None
     if std == 0:
         return 0.0
-    return _finite((float(sample.iloc[-1]) - float(sample.mean())) / std)
+    return _finite((sample.iloc[-1] - float(sample.mean())) / std)
 
 
 def _rsi(series: pd.Series, window: int = 14) -> FeatureValue:
@@ -142,7 +144,7 @@ def _distance_to_mean(series: pd.Series, window: int) -> FeatureValue:
     mean = float(sample.mean())
     if mean == 0:
         return None
-    return _finite(float(sample.iloc[-1]) / mean - 1)
+    return _finite(sample.iloc[-1] / mean - 1)
 
 
 def _drawdown(series: pd.Series, window: int) -> FeatureValue:
@@ -152,7 +154,7 @@ def _drawdown(series: pd.Series, window: int) -> FeatureValue:
     peak = float(sample.max())
     if peak <= 0:
         return None
-    return _finite(float(sample.iloc[-1]) / peak - 1)
+    return _finite(sample.iloc[-1] / peak - 1)
 
 
 def _median_interval_seconds(index: pd.Index) -> FeatureValue:
@@ -205,7 +207,8 @@ def _validate_frame(frame: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("feature frame index cannot contain duplicates")
 
     normalized = frame.copy()
-    normalized.index = normalized.index.tz_convert("UTC")
+    normalized_index = cast(pd.DatetimeIndex, normalized.index)
+    normalized.index = normalized_index.tz_convert("UTC")
     cadence = _median_interval_seconds(normalized.index)
     if cadence is None:
         raise ValueError("feature frame needs at least three timestamped observations")
