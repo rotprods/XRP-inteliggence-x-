@@ -1,12 +1,19 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from typing import cast
 
 import pytest
 
 from xrp_regime_engine.baseline_models_v1 import (
     BaselineKind,
     BaselineTrainingPolicy,
+    FittedBaselineModel,
+    _finite,
+    _fit_logistic,
+    _mean_scale,
+    _probability,
+    _smoothed_rate,
     binary_event_actual,
     fit_baseline_model,
     flatten_numeric_features,
@@ -14,7 +21,14 @@ from xrp_regime_engine.baseline_models_v1 import (
 from xrp_regime_engine.baseline_oos_factory_v1 import (
     BaselineSkillPolicy,
     BaselineSkillState,
+    _fold_rows,
+    _skill_entry,
+    _validate_folds,
     run_baseline_oos_factory,
+)
+from xrp_regime_engine.calibration_evidence_v1 import (
+    CalibrationEvidenceV1,
+    ReliabilityBin,
 )
 from xrp_regime_engine.future_labels_v1 import (
     PricePoint,
@@ -25,6 +39,7 @@ from xrp_regime_engine.historical_contract import EligibilityClass
 from xrp_regime_engine.historical_features_v1 import HistoricalFeatureRow
 from xrp_regime_engine.research_horizon import ResearchHorizon, horizon_end_at
 from xrp_regime_engine.walk_forward_v1 import (
+    LabeledFeatureRow,
     WalkForwardConfig,
     build_walk_forward_folds,
     join_labeled_rows,
@@ -336,6 +351,205 @@ def test_factory_requires_content_addressed_dataset_version() -> None:
     with pytest.raises(ValueError, match="dataset_version_id"):
         run_baseline_oos_factory(
             dataset_version_id="bad",
+            features=features,
+            labels=labels,
+            folds=folds,
+            event_key="return_gt_0",
+            feature_keys=("market.signal",),
+            momentum_feature_key="market.signal",
+        )
+
+
+def _calibration_evidence(
+    *,
+    sample_count: int,
+    positive_count: int,
+    brier_score: float = 0.25,
+    log_loss: float = 0.7,
+) -> CalibrationEvidenceV1:
+    return CalibrationEvidenceV1(
+        evidence_id="calibration-evidence:sha256:" + "c" * 64,
+        evidence_sha256="c" * 64,
+        horizon=ResearchHorizon.H1,
+        event_key="return_gt_0",
+        sample_count=sample_count,
+        positive_count=positive_count,
+        negative_count=sample_count - positive_count,
+        evaluation_start=T0,
+        evaluation_end=T0 + timedelta(days=1),
+        brier_score=brier_score,
+        log_loss=log_loss,
+        ece=0.1,
+        maximum_calibration_gap=0.1,
+        roc_auc=0.5,
+        calibration_intercept=0.0,
+        calibration_slope=1.0,
+        reference_base_rate=0.5,
+        reference_base_rate_brier=0.25,
+        reliability_bins=(
+            ReliabilityBin(
+                lower=0.0,
+                upper=1.0,
+                count=sample_count,
+                mean_score=0.5,
+                empirical_rate=positive_count / sample_count,
+                absolute_gap=abs(0.5 - positive_count / sample_count),
+            ),
+        ),
+    )
+
+
+def test_low_level_baseline_guards_and_null_flattening() -> None:
+    features, _, rows, _ = dataset(6)
+
+    with pytest.raises(ValueError, match="must be finite"):
+        _finite(float("nan"), "x")
+    with pytest.raises(ValueError, match=r"within \[0, 1\]"):
+        _probability(2.0, "p")
+    with pytest.raises(ValueError, match="invalid binary counts"):
+        _smoothed_rate(2, 1, 1.0)
+    with pytest.raises(ValueError, match="cannot be empty"):
+        _mean_scale(())
+    with pytest.raises(ValueError, match="dimensions"):
+        _fit_logistic((), (), l2=1.0, learning_rate=0.1, iterations=1)
+    with pytest.raises(ValueError, match="rectangular"):
+        _fit_logistic(
+            ((1.0,), (1.0, 2.0)),
+            (True, False),
+            l2=1.0,
+            learning_rate=0.1,
+            iterations=1,
+        )
+
+    with_null = replace(
+        features[0],
+        feature_families={"market": {"signal": 2.0, "missing": None}},
+    )
+    assert flatten_numeric_features(with_null) == {"market.signal": 2.0}
+
+    with pytest.raises(ValueError, match="required baseline feature"):
+        fit_baseline_model(
+            BaselineKind.B2_MOMENTUM,
+            rows[:4],
+            event_key="return_gt_0",
+            feature_keys=(),
+            momentum_feature_key="other.signal",
+        )
+
+    duplicate_row = rows[0]
+    with pytest.raises(ValueError, match="feature_row_id values must be unique"):
+        fit_baseline_model(
+            BaselineKind.B0_BASE_RATE,
+            (duplicate_row, duplicate_row),
+            event_key="return_gt_0",
+            feature_keys=(),
+            momentum_feature_key="market.signal",
+        )
+
+    invalid_kind = cast(BaselineKind, "INVALID")
+    with pytest.raises(ValueError, match="unsupported baseline kind"):
+        fit_baseline_model(
+            invalid_kind,
+            rows[:4],
+            event_key="return_gt_0",
+            feature_keys=(),
+            momentum_feature_key="market.signal",
+        )
+
+    fitted = FittedBaselineModel(
+        fit_id="baseline-fit:sha256:" + "f" * 64,
+        kind=invalid_kind,
+        event_key="return_gt_0",
+        feature_keys=(),
+        parameters={},
+        training_feature_row_ids=(rows[0].feature.feature_row_id,),
+    )
+    with pytest.raises(ValueError, match="unsupported baseline kind"):
+        fitted.predict(rows[0].feature)
+
+
+def test_fold_validation_and_fold_row_guards() -> None:
+    _, _, rows, folds = dataset(8)
+    first = folds[0]
+
+    with pytest.raises(ValueError, match="fold_id values must be unique"):
+        _validate_folds((first, replace(folds[1], fold_id=first.fold_id)))
+    with pytest.raises(ValueError, match="cannot mix horizons"):
+        _validate_folds((first, replace(folds[1], horizon=ResearchHorizon.H4)))
+    with pytest.raises(ValueError, match="contiguous"):
+        _validate_folds((replace(first, fold_index=1),))
+
+    row_map = {row.feature.feature_row_id: row for row in rows}
+    with pytest.raises(ValueError, match="non-empty train and test"):
+        _fold_rows(replace(first, train_feature_row_ids=()), row_map)
+
+    train_id = first.train_feature_row_ids[0]
+    train_row = row_map[train_id]
+    unresolved = LabeledFeatureRow(
+        feature=train_row.feature,
+        label=replace(train_row.label, resolved_at=first.cutoff_at),
+    )
+    unresolved_map = dict(row_map)
+    unresolved_map[train_id] = unresolved
+    with pytest.raises(ValueError, match="unresolved"):
+        _fold_rows(first, unresolved_map)
+
+    test_id = first.test_feature_row_ids[0]
+    test_row = row_map[test_id]
+    wrong_horizon = LabeledFeatureRow(
+        feature=replace(test_row.feature, horizon=ResearchHorizon.H4),
+        label=replace(test_row.label, horizon=ResearchHorizon.H4),
+    )
+    wrong_map = dict(row_map)
+    wrong_map[test_id] = wrong_horizon
+    with pytest.raises(ValueError, match="test row horizon"):
+        _fold_rows(first, wrong_map)
+
+
+def test_skill_entry_insufficient_sample_and_class_guards() -> None:
+    b0 = _calibration_evidence(sample_count=10, positive_count=5)
+    weak = _calibration_evidence(
+        sample_count=2,
+        positive_count=1,
+        brier_score=0.30,
+        log_loss=0.80,
+    )
+    entry = _skill_entry(
+        BaselineKind.B2_MOMENTUM,
+        weak,
+        b0,
+        BaselineSkillPolicy(
+            min_oos_predictions=5,
+            min_class_count=2,
+            min_brier_improvement=0.0,
+            max_log_loss_regression=0.0,
+        ),
+    )
+    assert {
+        "INSUFFICIENT_OOS_SAMPLE",
+        "INSUFFICIENT_POSITIVE_CLASS",
+        "INSUFFICIENT_NEGATIVE_CLASS",
+        "NO_BRIER_IMPROVEMENT",
+        "LOG_LOSS_REGRESSION",
+    } <= set(entry.reasons)
+
+
+def test_factory_empty_model_kind_and_dataset_digest_guards() -> None:
+    features, labels, _, folds = dataset(8)
+    with pytest.raises(ValueError, match="at least one baseline model kind"):
+        run_baseline_oos_factory(
+            dataset_version_id=DATASET,
+            features=features,
+            labels=labels,
+            folds=folds,
+            event_key="return_gt_0",
+            feature_keys=("market.signal",),
+            momentum_feature_key="market.signal",
+            model_kinds=(),
+        )
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        run_baseline_oos_factory(
+            dataset_version_id="dataset-version:sha256:" + "G" * 64,
             features=features,
             labels=labels,
             folds=folds,
