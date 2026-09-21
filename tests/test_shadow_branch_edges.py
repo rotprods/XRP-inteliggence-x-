@@ -6,9 +6,10 @@ import pytest
 from xrp_regime_engine.depth_dynamics import DepthDynamics
 from xrp_regime_engine.derivatives import DerivativesRiskState
 from xrp_regime_engine.flow_regime import FlowRegimeLabel, classify_flow_regime
+from xrp_regime_engine.local_book import BookSequenceError, DepthDelta, LocalOrderBook
 from xrp_regime_engine.market_state import MarketStateLabel, classify_market_state
-from xrp_regime_engine.microstructure import MicrostructureState
-from xrp_regime_engine.order_flow import OrderFlowState
+from xrp_regime_engine.microstructure import BookLevel, MicrostructureState
+from xrp_regime_engine.order_flow import AggregateTrade, OrderFlowState, compute_order_flow
 from xrp_regime_engine.trade_attribution import reconcile_depth_with_order_flow
 
 NOW = datetime(2026, 9, 21, 7, 0, tzinfo=UTC)
@@ -113,6 +114,38 @@ def _reconcile(depth: DepthDynamics) -> None:
     )
 
 
+def _delta(
+    first_update_id: int = 101,
+    final_update_id: int = 101,
+    *,
+    bids: tuple[BookLevel, ...] = (),
+    asks: tuple[BookLevel, ...] = (),
+    observed_at: datetime = NOW,
+    available_at: datetime | None = None,
+    fetched_at: datetime | None = None,
+) -> DepthDelta:
+    return DepthDelta(
+        first_update_id=first_update_id,
+        final_update_id=final_update_id,
+        observed_at=observed_at,
+        bids=bids,
+        asks=asks,
+        available_at=available_at,
+        fetched_at=fetched_at,
+    )
+
+
+def _book(*, synchronized: bool = False) -> LocalOrderBook:
+    return LocalOrderBook(
+        symbol="XRPUSDT",
+        last_update_id=100,
+        bids={1.400: 100.0},
+        asks={1.401: 100.0},
+        synchronized=synchronized,
+        observed_at=NOW,
+    )
+
+
 def test_flow_no_data_preserves_flow_identity_when_depth_missing() -> None:
     state = classify_flow_regime(None, _flow(), None)
     assert state.label == FlowRegimeLabel.NO_DATA
@@ -209,7 +242,7 @@ def test_ask_imbalance_without_lower_microprice_stays_balanced() -> None:
     [
         (
             {"first_observed_at": NOW + timedelta(seconds=2)},
-            "observed envelope is reversed",
+            "derived_window_seconds must be finite and positive",
         ),
         (
             {"first_available_at": NOW + timedelta(seconds=2)},
@@ -265,3 +298,87 @@ def test_missing_flow_window_fallback_is_rejected() -> None:
     )
     with pytest.raises(ValueError, match="explicit fallback is required"):
         reconcile_depth_with_order_flow(incomplete_depth, incomplete_flow)
+
+
+@pytest.mark.parametrize("price", [0.0, -1.0, float("inf"), float("nan")])
+def test_trade_rejects_invalid_price(price: float) -> None:
+    with pytest.raises(ValueError, match="price must be finite and positive"):
+        AggregateTrade(1, price, 1.0, NOW, buyer_is_maker=False)
+
+
+def test_trade_rejects_invalid_quantity_and_naive_observation() -> None:
+    with pytest.raises(ValueError, match="quantity must be finite and positive"):
+        AggregateTrade(1, 1.4, 0.0, NOW, buyer_is_maker=False)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        AggregateTrade(1, 1.4, 1.0, NOW.replace(tzinfo=None), buyer_is_maker=False)
+
+
+def test_trade_rejects_fetched_without_available_and_impossible_timestamp_order() -> None:
+    with pytest.raises(ValueError, match="provided together"):
+        AggregateTrade(
+            1,
+            1.4,
+            1.0,
+            NOW,
+            buyer_is_maker=False,
+            fetched_at=NOW + timedelta(milliseconds=20),
+        )
+    with pytest.raises(ValueError, match="observed <= available <= fetched"):
+        AggregateTrade(
+            1,
+            1.4,
+            1.0,
+            NOW,
+            buyer_is_maker=False,
+            available_at=NOW - timedelta(milliseconds=1),
+            fetched_at=NOW + timedelta(milliseconds=20),
+        )
+
+
+def test_trade_aggressor_side_and_empty_flow_contract() -> None:
+    buy = AggregateTrade(1, 1.4, 1.0, NOW, buyer_is_maker=False)
+    sell = AggregateTrade(2, 1.4, 1.0, NOW, buyer_is_maker=True)
+    assert buy.aggressive_side == "buy"
+    assert sell.aggressive_side == "sell"
+    with pytest.raises(ValueError, match="requires trades"):
+        compute_order_flow("XRPUSDT", ())
+
+
+def test_depth_delta_rejects_reversed_ids_naive_time_and_partial_provenance() -> None:
+    with pytest.raises(ValueError, match="cannot exceed"):
+        _delta(102, 101)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        _delta(observed_at=NOW.replace(tzinfo=None))
+    with pytest.raises(ValueError, match="provided together"):
+        _delta(fetched_at=NOW + timedelta(milliseconds=20))
+
+
+def test_depth_delta_rejects_impossible_timestamp_order() -> None:
+    with pytest.raises(ValueError, match="observed <= available <= fetched"):
+        _delta(
+            available_at=NOW - timedelta(milliseconds=1),
+            fetched_at=NOW + timedelta(milliseconds=20),
+        )
+
+
+def test_local_book_requires_sync_for_delta_and_top() -> None:
+    book = _book()
+    with pytest.raises(BookSequenceError, match="not synchronized"):
+        book.apply_delta(_delta())
+    with pytest.raises(BookSequenceError, match="not synchronized"):
+        book.top()
+
+
+def test_local_book_ignores_stale_delta_and_validates_top_level_count() -> None:
+    book = _book(synchronized=True)
+    book.apply_delta(_delta(99, 100, bids=(BookLevel(1.399, 10.0),)))
+    assert 1.399 not in book.bids
+    with pytest.raises(ValueError, match="levels must be positive"):
+        book.top(0)
+
+
+def test_local_book_crossed_update_invalidates_sync() -> None:
+    book = _book(synchronized=True)
+    with pytest.raises(BookSequenceError, match="invalid local book"):
+        book.apply_delta(_delta(bids=(BookLevel(1.402, 10.0),)))
+    assert book.synchronized is False
