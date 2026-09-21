@@ -4,10 +4,7 @@ from hashlib import sha256
 
 import pytest
 
-from xrp_regime_engine.baseline_models_v1 import (
-    BaselineKind,
-    BaselineTrainingPolicy,
-)
+from xrp_regime_engine.baseline_models_v1 import BaselineTrainingPolicy
 from xrp_regime_engine.baseline_oos_factory_v1 import (
     BaselineSkillPolicy,
     run_baseline_oos_factory,
