@@ -105,8 +105,7 @@ def test_date_only_fails_closed_until_next_utc_day() -> None:
         fetched_at=T0 - timedelta(days=1),
     )
     assert (
-        item.eligibility_at(datetime(2026, 1, 2, 23, 59, tzinfo=UTC))
-        is EligibilityClass.INELIGIBLE
+        item.eligibility_at(datetime(2026, 1, 2, 23, 59, tzinfo=UTC)) is EligibilityClass.INELIGIBLE
     )
     assert (
         item.eligibility_at(datetime(2026, 1, 3, 0, 0, tzinfo=UTC))
