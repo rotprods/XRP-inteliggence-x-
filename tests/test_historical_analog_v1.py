@@ -339,7 +339,6 @@ def test_sensitivity_threshold_validation() -> None:
         )
 
 
-
 def test_self_state_same_regime_filter_and_no_signal_branches() -> None:
     query = state(40)
     different = replace(
