@@ -136,3 +136,12 @@ def test_invalid_alignment_policy_is_rejected(value: float) -> None:
             flow(),
             flow_window_seconds=value,
         )
+
+
+def test_invalid_observed_notional_is_rejected() -> None:
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        reconcile_depth_with_order_flow(
+            depth(bid_removed=-1.0),
+            flow(),
+            flow_window_seconds=1.0,
+        )
