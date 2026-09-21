@@ -127,14 +127,15 @@ def _beta(asset: pd.Series, benchmark: pd.Series, window: int = 90) -> FeatureVa
     variance = float(joined.iloc[:, 1].var())
     if not math.isfinite(variance) or variance == 0:
         return None
-    return _finite(float(joined.cov().iloc[0, 1]) / variance)
+    covariance = cast(float, joined.cov().iloc[0, 1])
+    return _finite(covariance / variance)
 
 
 def _corr(a: pd.Series, b: pd.Series, window: int = 90) -> FeatureValue:
     joined = _paired_returns(a, b, window)
     if len(joined) < window:
         return None
-    return _finite(float(joined.corr().iloc[0, 1]))
+    return _finite(cast(float, joined.corr().iloc[0, 1]))
 
 
 def _distance_to_mean(series: pd.Series, window: int) -> FeatureValue:
