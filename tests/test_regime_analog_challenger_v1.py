@@ -364,9 +364,7 @@ def test_baseline_identity_and_temporal_guards_fail_closed() -> None:
         )
 
     first_train_id = folds[0].train_feature_row_ids[0]
-    index = next(
-        i for i, item in enumerate(labels) if item.feature_row_id == first_train_id
-    )
+    index = next(i for i, item in enumerate(labels) if item.feature_row_id == first_train_id)
     corrupted = list(labels)
     corrupted[index] = replace(
         corrupted[index],
