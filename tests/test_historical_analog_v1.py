@@ -17,6 +17,7 @@ from xrp_regime_engine.historical_analog_v1 import (
 from xrp_regime_engine.historical_contract import EligibilityClass
 from xrp_regime_engine.historical_features_v1 import HistoricalFeatureRow
 from xrp_regime_engine.regime_state_v1 import (
+    CanonicalRegime,
     canonical_regime_policy,
     classify_regime,
 )
