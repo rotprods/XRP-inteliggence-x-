@@ -117,10 +117,7 @@ def test_resolve_outcome_supported_events() -> None:
     label = Label()
     assert resolve_oos_outcome(p, label).actual is True
     assert resolve_oos_outcome(pred(event_key="touch_return_up:0.05"), label).actual is True
-    assert (
-        resolve_oos_outcome(pred(event_key="touch_return_down:0.05"), label).actual
-        is False
-    )
+    assert resolve_oos_outcome(pred(event_key="touch_return_down:0.05"), label).actual is False
     assert resolve_oos_outcome(pred(event_key="touch_price:2"), label).actual is True
 
 
