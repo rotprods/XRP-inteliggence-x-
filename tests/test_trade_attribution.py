@@ -58,6 +58,7 @@ def flow(
 def test_aligned_streams_emit_compatibility_not_causal_attribution() -> None:
     state = reconcile_depth_with_order_flow(depth(), flow(), flow_window_seconds=1.0)
     assert state.evidence_eligible is True
+    assert state.regime_eligible is False
     assert state.bid_trade_compatible_notional == 500.0
     assert state.ask_trade_compatible_notional == 300.0
     assert state.trade_compatible_removed_notional == 800.0
@@ -66,6 +67,7 @@ def test_aligned_streams_emit_compatibility_not_causal_attribution() -> None:
     assert state.removal_coverage_ratio == pytest.approx(0.8)
     assert state.causal_attribution_confirmed is False
     assert "TRADE_CONSUMPTION_COMPATIBLE_ONLY" in state.quality_flags
+    assert "POINT_IN_TIME_PROVENANCE_INCOMPLETE" in state.quality_flags
     assert "REMOVAL_CANDIDATE_RESIDUAL" in state.quality_flags
     assert state.execution_weight == 0.0
 
@@ -77,15 +79,18 @@ def test_end_time_misalignment_fails_closed_without_pairing_notionals() -> None:
         flow_window_seconds=1.0,
     )
     assert state.evidence_eligible is False
+    assert state.regime_eligible is False
     assert state.trade_compatible_removed_notional is None
     assert state.removal_candidate_residual_notional is None
     assert "CROSS_STREAM_END_TIME_MISALIGNED" in state.quality_flags
+    assert "POINT_IN_TIME_PROVENANCE_INCOMPLETE" in state.quality_flags
     assert state.execution_weight == 0.0
 
 
 def test_window_misalignment_fails_closed() -> None:
     state = reconcile_depth_with_order_flow(depth(), flow(), flow_window_seconds=3.0)
     assert state.evidence_eligible is False
+    assert state.regime_eligible is False
     assert state.removal_coverage_ratio is None
     assert "CROSS_STREAM_WINDOW_MISALIGNED" in state.quality_flags
 
@@ -99,6 +104,7 @@ def test_aggressive_trade_excess_is_separated_from_displayed_removal() -> None:
     assert state.trade_compatible_removed_notional == 200.0
     assert state.removal_candidate_residual_notional == 0.0
     assert state.unmatched_aggressive_trade_notional == 500.0
+    assert state.regime_eligible is False
     assert "AGGRESSIVE_TRADE_EXCEEDS_DISPLAYED_REMOVAL" in state.quality_flags
 
 
@@ -109,6 +115,7 @@ def test_zero_depth_removal_has_no_coverage_ratio() -> None:
         flow_window_seconds=1.0,
     )
     assert state.removal_coverage_ratio is None
+    assert state.regime_eligible is False
     assert "NO_DISPLAYED_DEPTH_REMOVAL" in state.quality_flags
 
 
