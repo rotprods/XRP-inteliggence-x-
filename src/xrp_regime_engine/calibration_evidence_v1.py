@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from collections.abc import Sequence
 from typing import cast
 
 from xrp_regime_engine.oos_predictions_v1 import OOSPrediction, ResolvedOOSOutcome
