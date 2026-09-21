@@ -26,11 +26,12 @@ Hard invariants remain:
 
 ## Canonical lineage
 
-- PR #20 is merged on canonical main.
-- PR #21 frozen OOS prediction + calibration evidence core is merged; canonical merge commit: `7625d1870df07c13538c978b55f545eae76cf97e`.
-- PR #22 DatasetVersion V1 is merged after exact-head FAST PASS; canonical merge commit: `3b739b567fa8866a9290c2488e032cfb16c78acc`.
-- Branch `research/baseline-skill-gate-main-v2` was created directly from `main@3b739b567fa8866a9290c2488e032cfb16c78acc`.
-- H6 consumes canonical `DatasetVersion`, `HistoricalFeatureRow`, `FutureOutcomeLabel`, `WalkForwardFoldPlan`, `OOSPrediction`, and calibration-evidence contracts. It does not duplicate them.
+- PR #20 historical feature/label + walk-forward foundation is merged.
+- PR #21 frozen OOS prediction + calibration evidence core is merged.
+- PR #22 DatasetVersion V1 is merged.
+- PR #24 OOS ledger content-addressed integrity hardening is merged; canonical main: `41c69e8666954dfd08e6e9d44632ba9457299e9a`.
+- Branch `research/baseline-skill-gate-main-v2` remains the sole H6 promotion branch. Its PR merge-ref must be verified against the current main before merge.
+- H6 consumes canonical `DatasetVersion`, `HistoricalFeatureRow`, `FutureOutcomeLabel`, `WalkForwardFoldPlan`, hardened `OOSPrediction`, and calibration-evidence contracts. It does not duplicate them.
 
 ## New runtime surfaces
 
