@@ -107,10 +107,7 @@ def test_empty_bundle_map_yields_126_explicit_missing_cells() -> None:
     assert not matrix.probability_calibrated
     assert not matrix.production_ready
     assert matrix.execution_weight == 0
-    assert all(
-        item.state is MatrixCellState.MISSING_HORIZON_DATA
-        for item in matrix.cells
-    )
+    assert all(item.state is MatrixCellState.MISSING_HORIZON_DATA for item in matrix.cells)
 
 
 def test_single_horizon_executes_real_oos_cell() -> None:
