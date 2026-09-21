@@ -145,9 +145,7 @@ def _validate_source_coverage(
         missing = ", ".join(sorted(role.value for role in missing_roles))
         raise ValueError(f"required evidence source roles are missing: {missing}")
 
-    vector_providers = {
-        _normalize_provider(provider) for provider in vector.independent_providers
-    }
+    vector_providers = {_normalize_provider(provider) for provider in vector.independent_providers}
     if (
         len(vector_providers) != vector.independent_provider_count
         or vector.independent_provider_count < 2
@@ -246,9 +244,7 @@ def shadow_evidence_graph_document(lineage: ShadowEvidenceLineage) -> GraphDocum
             "source_digests": {
                 source.source_id: source.content_sha256 for source in lineage.sources
             },
-            "source_roles": {
-                source.source_id: source.role.value for source in lineage.sources
-            },
+            "source_roles": {source.source_id: source.role.value for source in lineage.sources},
             "execution_weight": 0.0,
         },
     )
