@@ -101,6 +101,31 @@ For \`DATE_ONLY\`, the date must not be silently converted to midnight and treat
 
 The current live \`EvidenceSourceDigest\` contract in PR #15 requires \`observed_at <= available_at <= fetched_at\` for its market-evidence roles. That is acceptable as a bounded live-role invariant, but it must not be generalized into a universal historical-source law without source-specific proof.
 
+### 3.3 Historical reconstruction paradox
+
+A historical backfill fetched today cannot truthfully claim that this system fetched the payload before a prediction made years ago. \`fetched_at\` is an acquisition fact and must never be backdated.
+
+V2 therefore separates two research classes:
+
+**STRICT_REPLAY**
+
+- \`available_at <= T\`;
+- actual local \`fetched_at <= T\`;
+- represents information the running system physically possessed by T;
+- this is the authority class for forward shadow/live evaluation.
+
+**RECONSTRUCTED_PIT**
+
+- the source/archive proves the datum or vintage was publicly available by T;
+- actual local \`fetched_at\` may be later than T;
+- the record is explicitly tagged retrospective/reconstructed;
+- a reconstruction-basis/source-vintage identifier is mandatory;
+- it may support historical model research, but it must never be presented as evidence that this system physically possessed the datum at T.
+
+A reconstructed row must not silently satisfy the strict \`fetched_at <= T\` gate. Reports and calibration artifacts must disclose which class supplied each sample.
+
+This distinction is especially important for pre-system history (2017–2025). Statistical calibration from reconstructed PIT history and operational calibration from forward strict replay are separate evidence claims. A future production-readiness decision must define the minimum forward strict evidence required per horizon; reconstructed history alone cannot prove live-pipeline availability.
+
 ---
 
 ## 4. Provenance objects
