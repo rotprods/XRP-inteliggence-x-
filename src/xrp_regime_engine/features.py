@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 
 FeatureValue = float | None
+NumericScalar = float | int | np.floating[Any]
 
 REQUIRED_COLUMNS = frozenset(
     {
@@ -44,7 +46,7 @@ DAILY_CADENCE_MIN_SECONDS = 18 * 60 * 60
 DAILY_CADENCE_MAX_SECONDS = 30 * 60 * 60
 
 
-def _finite(value: float | int | np.floating[object] | None) -> FeatureValue:
+def _finite(value: NumericScalar | None) -> FeatureValue:
     if value is None:
         return None
     candidate = float(value)
@@ -125,14 +127,16 @@ def _beta(asset: pd.Series, benchmark: pd.Series, window: int = 90) -> FeatureVa
     variance = float(joined.iloc[:, 1].var())
     if not math.isfinite(variance) or variance == 0:
         return None
-    return _finite(float(joined.cov().iloc[0, 1]) / variance)
+    covariance = cast(NumericScalar, joined.cov().iloc[0, 1])
+    return _finite(float(covariance) / variance)
 
 
 def _corr(a: pd.Series, b: pd.Series, window: int = 90) -> FeatureValue:
     joined = _paired_returns(a, b, window)
     if len(joined) < window:
         return None
-    return _finite(float(joined.corr().iloc[0, 1]))
+    correlation = cast(NumericScalar, joined.corr().iloc[0, 1])
+    return _finite(correlation)
 
 
 def _distance_to_mean(series: pd.Series, window: int) -> FeatureValue:
@@ -205,7 +209,7 @@ def _validate_frame(frame: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("feature frame index cannot contain duplicates")
 
     normalized = frame.copy()
-    normalized.index = normalized.index.tz_convert("UTC")
+    normalized.index = pd.DatetimeIndex(normalized.index).tz_convert("UTC")
     cadence = _median_interval_seconds(normalized.index)
     if cadence is None:
         raise ValueError("feature frame needs at least three timestamped observations")
