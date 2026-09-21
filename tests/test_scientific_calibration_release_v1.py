@@ -301,3 +301,71 @@ def test_barrier_matrix_structural_guards() -> None:
             distribution_decisions=(),
             barrier_matrix=replace(matrix, cells=(outside_axes, *matrix.cells[1:])),
         )
+
+
+
+def test_additional_barrier_axis_and_identity_guards() -> None:
+    matrix = full_barrier_matrix()
+
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        build_scientific_calibration_release_report(
+            dataset_version_id="dataset-version:sha256:" + "G" * 64,
+            directional_decisions=(),
+            distribution_decisions=(),
+            barrier_matrix=matrix,
+        )
+
+    with pytest.raises(ValueError, match="unsupported barrier"):
+        build_scientific_calibration_release_report(
+            dataset_version_id=DATASET,
+            directional_decisions=(),
+            distribution_decisions=(),
+            barrier_matrix=replace(matrix, barriers=(999.0,)),
+        )
+
+    subset_axes = replace(
+        matrix,
+        barriers=matrix.barriers[1:],
+    )
+    with pytest.raises(ValueError, match="outside declared matrix axes"):
+        build_scientific_calibration_release_report(
+            dataset_version_id=DATASET,
+            directional_decisions=(),
+            distribution_decisions=(),
+            barrier_matrix=subset_axes,
+        )
+
+    with pytest.raises(ValueError, match="barrier_matrix_id"):
+        build_scientific_calibration_release_report(
+            dataset_version_id=DATASET,
+            directional_decisions=(),
+            distribution_decisions=(),
+            barrier_matrix=replace(matrix, matrix_id="bad"),
+        )
+
+
+def test_decision_identity_guards() -> None:
+    matrix = full_barrier_matrix()
+    bad_directional = replace(
+        directional(ResearchHorizon.H1),
+        decision_id="calibration-promotion:sha256:" + "G" * 64,
+    )
+    with pytest.raises(ValueError, match="decision_id"):
+        build_scientific_calibration_release_report(
+            dataset_version_id=DATASET,
+            directional_decisions=(bad_directional,),
+            distribution_decisions=(),
+            barrier_matrix=matrix,
+        )
+
+    bad_distribution = replace(
+        distribution(ResearchHorizon.H1),
+        decision_id="distribution-promotion:sha256:" + "G" * 64,
+    )
+    with pytest.raises(ValueError, match="decision_id"):
+        build_scientific_calibration_release_report(
+            dataset_version_id=DATASET,
+            directional_decisions=(),
+            distribution_decisions=(bad_distribution,),
+            barrier_matrix=matrix,
+        )
