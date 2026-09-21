@@ -17,7 +17,6 @@ from xrp_regime_engine.derivatives import (
 from xrp_regime_engine.local_book import BookSequenceError, DepthDelta, LocalOrderBook
 from xrp_regime_engine.microstructure import (
     BookLevel,
-    MicrostructureState,
     OrderBookSnapshot,
     compute_microstructure,
 )
