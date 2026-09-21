@@ -17,12 +17,12 @@ from xrp_regime_engine.historical_contract import (
 from xrp_regime_engine.historical_store_v2 import DurableManifest, DurablePartition
 
 T0 = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
-DATASET_SHA = sha256(b"dataset").hexdigest()
 MANIFEST_SHA = sha256(b"manifest").hexdigest()
 PARTITION_SHA = sha256(b"partition").hexdigest()
 OTHER_PARTITION_SHA = sha256(b"other-partition").hexdigest()
 PAYLOAD_SHA = sha256(b"payload").hexdigest()
 REQUEST_SHA = sha256(b"request").hexdigest()
+FORGED_SHA = sha256(b"forged-dataset").hexdigest()
 
 
 def coverage() -> ProviderCoverage:
@@ -37,24 +37,16 @@ def coverage() -> ProviderCoverage:
 
 
 def version() -> DatasetVersion:
-    return DatasetVersion(
-        dataset_version_id=f"dataset-version:sha256:{DATASET_SHA}",
-        dataset_sha256=DATASET_SHA,
+    return build_dataset_version(
         dataset_key="xrp-research-1h",
         schema_version="1",
-        source_manifest_ids=(f"manifest:sha256:{MANIFEST_SHA}",),
-        source_manifest_hashes=(MANIFEST_SHA,),
-        partition_ids=(f"partition:sha256:{PARTITION_SHA}",),
-        partition_hashes=(PARTITION_SHA,),
+        manifests=(manifest(f"partition:sha256:{PARTITION_SHA}"),),
+        partitions=(partition(),),
+        observations=(observation(),),
         feature_schema_version="features-v1",
         label_schema_version="labels-v1",
         created_at=T0 + timedelta(minutes=1),
         cutoff_at=T0,
-        total_rows=1,
-        strict_replay_fraction=1.0,
-        reconstructed_pit_fraction=0.0,
-        provider_coverage=(coverage(),),
-        gaps=(),
     )
 
 
@@ -162,6 +154,22 @@ def test_direct_version_structural_guards_fail_closed() -> None:
         )
     with pytest.raises(ValueError, match="within \[0, 1\]"):
         replace(current, strict_replay_fraction=1.1, reconstructed_pit_fraction=-0.1)
+
+
+def test_direct_version_rejects_forged_content_address() -> None:
+    current = version()
+    with pytest.raises(ValueError, match="must match dataset_sha256"):
+        replace(current, dataset_version_id=f"dataset-version:sha256:{FORGED_SHA}")
+    with pytest.raises(ValueError, match="canonical payload"):
+        replace(
+            current,
+            dataset_version_id=f"dataset-version:sha256:{FORGED_SHA}",
+            dataset_sha256=FORGED_SHA,
+        )
+    with pytest.raises(ValueError, match="canonical payload"):
+        replace(current, dataset_key="xrp-research-forged")
+    with pytest.raises(ValueError, match="canonical payload"):
+        replace(current, total_rows=current.total_rows + 1)
 
 
 def test_manifest_internal_duplicate_partition_ids_fail_closed() -> None:
