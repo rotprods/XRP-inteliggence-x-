@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
@@ -15,6 +16,7 @@ from xrp_regime_engine.walk_forward_v1 import (
     LabeledFeatureRow,
     WalkForwardConfig,
     WalkForwardMode,
+    _utc,
     build_walk_forward_folds,
     join_labeled_rows,
 )
@@ -76,6 +78,51 @@ def test_labeled_row_rejects_identity_mismatch() -> None:
 
     with pytest.raises(ValueError, match="same feature_row_id"):
         LabeledFeatureRow(feature=first, label=_label(second))
+
+
+def test_labeled_row_rejects_temporal_and_horizon_mismatches() -> None:
+    feature = _feature(0, T0)
+    label = _label(feature)
+
+    with pytest.raises(ValueError, match="prediction_time must match"):
+        LabeledFeatureRow(
+            feature=feature,
+            label=replace(label, prediction_time=label.prediction_time + timedelta(seconds=1)),
+        )
+    with pytest.raises(ValueError, match="horizon must match"):
+        LabeledFeatureRow(
+            feature=feature,
+            label=replace(label, horizon=ResearchHorizon.H4),
+        )
+    with pytest.raises(ValueError, match="horizon must end after"):
+        LabeledFeatureRow(
+            feature=feature,
+            label=replace(label, label_end_at=feature.prediction_time),
+        )
+    with pytest.raises(ValueError, match="cannot resolve before"):
+        LabeledFeatureRow(
+            feature=feature,
+            label=replace(label, resolved_at=label.label_end_at - timedelta(seconds=1)),
+        )
+
+
+def test_internal_utc_guard_rejects_naive_cutoff() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        _utc(datetime(2026, 1, 1), "cutoff_at")
+
+
+def test_join_rejects_empty_and_duplicate_inputs() -> None:
+    first = _feature(0, T0)
+    label = _label(first)
+
+    with pytest.raises(ValueError, match="features cannot be empty"):
+        join_labeled_rows((), (label,))
+    with pytest.raises(ValueError, match="labels cannot be empty"):
+        join_labeled_rows((first,), ())
+    with pytest.raises(ValueError, match="duplicate feature_row_id"):
+        join_labeled_rows((first, first), (label,))
+    with pytest.raises(ValueError, match="duplicate label"):
+        join_labeled_rows((first,), (label, label))
 
 
 def test_join_rejects_missing_and_orphan_labels() -> None:
@@ -154,7 +201,7 @@ def test_rolling_window_caps_training_rows() -> None:
     )
 
 
-def test_fold_identity_is_deterministic() -> None:
+def test_fold_identity_and_payload_are_deterministic() -> None:
     features = tuple(_feature(i, T0 + timedelta(days=i)) for i in range(5))
     labels = tuple(_label(feature) for feature in features)
     config = WalkForwardConfig(min_train_size=2)
@@ -166,6 +213,11 @@ def test_fold_identity_is_deterministic() -> None:
     )
 
     assert tuple(fold.fold_id for fold in forward) == tuple(fold.fold_id for fold in reverse)
+    payload = forward[0].to_payload()
+    assert payload["fold_id"] == forward[0].fold_id
+    assert payload["mode"] == WalkForwardMode.EXPANDING.value
+    assert payload["horizon"] == ResearchHorizon.H1.value
+    assert payload["test_feature_row_ids"] == list(forward[0].test_feature_row_ids)
 
 
 def test_no_fold_when_all_labels_resolve_too_late() -> None:
@@ -178,6 +230,35 @@ def test_no_fold_when_all_labels_resolve_too_late() -> None:
         build_walk_forward_folds(rows, config=WalkForwardConfig(min_train_size=1))
 
 
+def test_build_folds_rejects_empty_duplicate_mixed_and_duplicate_time_rows() -> None:
+    with pytest.raises(ValueError, match="rows cannot be empty"):
+        build_walk_forward_folds((), config=WalkForwardConfig(min_train_size=1))
+
+    first_feature = _feature(0, T0)
+    first_row = LabeledFeatureRow(first_feature, _label(first_feature))
+    with pytest.raises(ValueError, match="feature_row_id values must be unique"):
+        build_walk_forward_folds(
+            (first_row, first_row),
+            config=WalkForwardConfig(min_train_size=1),
+        )
+
+    h4_feature = _feature(1, T0 + timedelta(days=1), horizon=ResearchHorizon.H4)
+    h4_row = LabeledFeatureRow(h4_feature, _label(h4_feature))
+    with pytest.raises(ValueError, match="exactly one research horizon"):
+        build_walk_forward_folds(
+            (first_row, h4_row),
+            config=WalkForwardConfig(min_train_size=1),
+        )
+
+    same_time_feature = _feature(2, T0)
+    same_time_row = LabeledFeatureRow(same_time_feature, _label(same_time_feature))
+    with pytest.raises(ValueError, match="prediction_time values must be unique"):
+        build_walk_forward_folds(
+            (first_row, same_time_row),
+            config=WalkForwardConfig(min_train_size=1),
+        )
+
+
 def test_valid_config_smoke() -> None:
     config = WalkForwardConfig(
         min_train_size=2,
@@ -188,6 +269,21 @@ def test_valid_config_smoke() -> None:
         embargo=timedelta(hours=1),
     )
     assert config.effective_step_size == 2
+
+
+def test_config_rejects_invalid_sizes_and_bounds() -> None:
+    with pytest.raises(ValueError, match="min_train_size must be positive"):
+        WalkForwardConfig(min_train_size=0)
+    with pytest.raises(ValueError, match="test_size must be positive"):
+        WalkForwardConfig(min_train_size=1, test_size=0)
+    with pytest.raises(ValueError, match="only valid in rolling"):
+        WalkForwardConfig(min_train_size=1, max_train_size=2)
+    with pytest.raises(ValueError, match="must be >= min_train_size"):
+        WalkForwardConfig(
+            min_train_size=3,
+            mode=WalkForwardMode.ROLLING,
+            max_train_size=2,
+        )
 
 
 def test_config_rejects_overlapping_test_windows() -> None:
