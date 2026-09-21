@@ -192,28 +192,51 @@ def test_snapshot_reconstructed_requires_opt_in() -> None:
 def test_contract_validation_and_snapshot_fail_closed_edges() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         FetchReceipt.create(
-            source_id="s", provider="p", canonical_uri="https://example.com/x",
-            endpoint="/x", request_fingerprint=REQUEST_SHA,
-            fetched_at=T0.replace(tzinfo=None), payload_sha256=PAYLOAD_SHA,
-            ingestion_version="2", parser_version="2",
+            source_id="s",
+            provider="p",
+            canonical_uri="https://example.com/x",
+            endpoint="/x",
+            request_fingerprint=REQUEST_SHA,
+            fetched_at=T0.replace(tzinfo=None),
+            payload_sha256=PAYLOAD_SHA,
+            ingestion_version="2",
+            parser_version="2",
         )
     with pytest.raises(ValueError, match="lowercase SHA-256"):
         FetchReceipt.create(
-            source_id="s", provider="p", canonical_uri="https://example.com/x",
-            endpoint="/x", request_fingerprint="bad", fetched_at=T0,
-            payload_sha256=PAYLOAD_SHA, ingestion_version="2", parser_version="2",
+            source_id="s",
+            provider="p",
+            canonical_uri="https://example.com/x",
+            endpoint="/x",
+            request_fingerprint="bad",
+            fetched_at=T0,
+            payload_sha256=PAYLOAD_SHA,
+            ingestion_version="2",
+            parser_version="2",
         )
     with pytest.raises(ValueError, match="required"):
         FetchReceipt.create(
-            source_id=" ", provider="p", canonical_uri="https://example.com/x",
-            endpoint="/x", request_fingerprint=REQUEST_SHA, fetched_at=T0,
-            payload_sha256=PAYLOAD_SHA, ingestion_version="2", parser_version="2",
+            source_id=" ",
+            provider="p",
+            canonical_uri="https://example.com/x",
+            endpoint="/x",
+            request_fingerprint=REQUEST_SHA,
+            fetched_at=T0,
+            payload_sha256=PAYLOAD_SHA,
+            ingestion_version="2",
+            parser_version="2",
         )
     with pytest.raises(ValueError, match="absolute HTTP"):
         FetchReceipt.create(
-            source_id="s", provider="p", canonical_uri="file:///tmp/x",
-            endpoint="/x", request_fingerprint=REQUEST_SHA, fetched_at=T0,
-            payload_sha256=PAYLOAD_SHA, ingestion_version="2", parser_version="2",
+            source_id="s",
+            provider="p",
+            canonical_uri="file:///tmp/x",
+            endpoint="/x",
+            request_fingerprint=REQUEST_SHA,
+            fetched_at=T0,
+            payload_sha256=PAYLOAD_SHA,
+            ingestion_version="2",
+            parser_version="2",
         )
 
     with pytest.raises(ValueError, match="fetch_id"):
@@ -224,17 +247,21 @@ def test_contract_validation_and_snapshot_fail_closed_edges() -> None:
         replace(obs("a"), available_at=None)
     with pytest.raises(ValueError, match="INFERRED_CONSERVATIVE"):
         replace(
-            obs("a"), availability_precision=AvailabilityPrecision.INFERRED_CONSERVATIVE,
+            obs("a"),
+            availability_precision=AvailabilityPrecision.INFERRED_CONSERVATIVE,
             available_at=None,
         )
     with pytest.raises(ValueError, match="DATE_ONLY"):
         replace(
-            obs("a"), availability_precision=AvailabilityPrecision.DATE_ONLY,
-            available_at=T0, available_date=None,
+            obs("a"),
+            availability_precision=AvailabilityPrecision.DATE_ONLY,
+            available_at=T0,
+            available_date=None,
         )
     with pytest.raises(ValueError, match="UNKNOWN"):
         replace(
-            obs("a"), availability_precision=AvailabilityPrecision.UNKNOWN,
+            obs("a"),
+            availability_precision=AvailabilityPrecision.UNKNOWN,
             available_at=T0,
         )
     with pytest.raises(ValueError, match="fetched_at cannot precede"):
@@ -242,7 +269,9 @@ def test_contract_validation_and_snapshot_fail_closed_edges() -> None:
 
     with pytest.raises(ValueError, match="requires observations"):
         SourceSnapshot.build((), prediction_time=T0)
-    future = obs("future", available_at=T0 + timedelta(minutes=1), fetched_at=T0 + timedelta(minutes=2))
+    future = obs(
+        "future", available_at=T0 + timedelta(minutes=1), fetched_at=T0 + timedelta(minutes=2)
+    )
     with pytest.raises(ValueError, match="ineligible"):
         SourceSnapshot.build((future,), prediction_time=T0)
 
@@ -254,9 +283,9 @@ def test_as_of_reconstructed_filter_and_revision_ranking_edges() -> None:
         reconstruction_basis_id="archive:v1",
     )
     assert select_as_of((reconstructed,), prediction_time=T0) == ()
-    assert select_as_of(
-        (reconstructed,), prediction_time=T0, allow_reconstructed=True
-    ) == (reconstructed,)
+    assert select_as_of((reconstructed,), prediction_time=T0, allow_reconstructed=True) == (
+        reconstructed,
+    )
 
     no_revision = replace(obs("old"), revision_sequence=None)
     newer_revision = obs("new", revision=1)
