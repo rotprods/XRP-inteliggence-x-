@@ -171,7 +171,9 @@ def build_baseline_research_matrix(
                     run_id=run.run_id,
                     development_challenger=run.development_challenger,
                     dataset_version_id=bundle.dataset_version_id,
-                    reasons=() if state is MatrixCellState.CHALLENGER_FOUND else ("NO_SKILLED_CHALLENGER",),
+                    reasons=()
+                    if state is MatrixCellState.CHALLENGER_FOUND
+                    else ("NO_SKILLED_CHALLENGER",),
                 )
             )
 
