@@ -51,7 +51,9 @@ class TemporalFlowSample:
         ):
             _require_aware(value, field)
         if not self.observed_at <= self.available_at <= self.fetched_at:
-            raise ValueError("microstructure timestamps must satisfy observed <= available <= fetched")
+            raise ValueError(
+                "microstructure timestamps must satisfy observed <= available <= fetched"
+            )
         if not self.symbol:
             raise ValueError("symbol is required")
         for field, value in (
@@ -187,9 +189,7 @@ def build_temporal_window(
         first_observed_at=first.observed_at,
         last_observed_at=last.observed_at,
         mid_return_bps=(last.mid_price / first.mid_price - 1) * 10_000,
-        mean_depth_imbalance_25bps=sum(
-            sample.depth_imbalance_25bps for sample in eligible
-        )
+        mean_depth_imbalance_25bps=sum(sample.depth_imbalance_25bps for sample in eligible)
         / len(eligible),
         aggressive_buy_notional=buys,
         aggressive_sell_notional=sells,

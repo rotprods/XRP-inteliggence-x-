@@ -36,15 +36,21 @@ def classify_flow_regime(
 ) -> FlowRegime:
     if micro is None or flow is None:
         observed = (
-            micro.observed_at if micro is not None
-            else flow.observed_at if flow is not None
-            else derivatives.observed_at if derivatives is not None
+            micro.observed_at
+            if micro is not None
+            else flow.observed_at
+            if flow is not None
+            else derivatives.observed_at
+            if derivatives is not None
             else datetime.min
         )
         symbol = (
-            micro.symbol if micro is not None
-            else flow.symbol if flow is not None
-            else derivatives.symbol if derivatives is not None
+            micro.symbol
+            if micro is not None
+            else flow.symbol
+            if flow is not None
+            else derivatives.symbol
+            if derivatives is not None
             else "UNKNOWN"
         )
         return FlowRegime(

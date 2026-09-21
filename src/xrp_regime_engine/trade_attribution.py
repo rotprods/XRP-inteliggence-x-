@@ -236,10 +236,7 @@ def reconcile_depth_with_order_flow(
                 prediction_time_safe = True
 
     point_in_time_eligible = (
-        aligned
-        and provenance_complete
-        and provenance_window_derived
-        and prediction_time_safe
+        aligned and provenance_complete and provenance_window_derived and prediction_time_safe
     )
     if not aligned or future_knowledge_blocked:
         return DepthTradeCompatibility(

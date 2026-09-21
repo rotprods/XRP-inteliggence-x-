@@ -115,9 +115,7 @@ def assess_cross_stream_alignment(
     policy = policy or CrossStreamFreshnessPolicy()
 
     symbols = {
-        item.symbol
-        for item in (depth, order_flow, funding, open_interest)
-        if item is not None
+        item.symbol for item in (depth, order_flow, funding, open_interest) if item is not None
     }
     if len(symbols) > 1:
         raise ValueError("cross-stream alignment cannot mix symbols")
@@ -157,9 +155,7 @@ def assess_cross_stream_alignment(
         observed_at=None if open_interest is None else open_interest.observed_at,
         available_at=None if open_interest is None else open_interest.available_at,
         fetched_at=None if open_interest is None else open_interest.fetched_at,
-        provenance_complete=(
-            False if open_interest is None else open_interest.provenance_complete
-        ),
+        provenance_complete=(False if open_interest is None else open_interest.provenance_complete),
         prediction_time=prediction_time,
         max_age_seconds=policy.open_interest_max_age_seconds,
         flags=flags,
@@ -194,9 +190,7 @@ def assess_cross_stream_alignment(
         value
         for value in (
             None if depth is None else depth.last_observed_at or depth.observed_at,
-            None
-            if order_flow is None
-            else order_flow.last_observed_at or order_flow.observed_at,
+            None if order_flow is None else order_flow.last_observed_at or order_flow.observed_at,
             None if open_interest is None else open_interest.observed_at,
             None if funding is None else funding.observed_at,
         )

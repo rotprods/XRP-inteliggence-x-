@@ -30,9 +30,7 @@ async def test_funding_captures_local_fetch_time_without_inventing_availability(
                 "markPrice": "1.42",
                 "indexPrice": "1.419",
                 "lastFundingRate": "0.0001",
-                "nextFundingTime": int(
-                    (OBSERVED + timedelta(hours=8)).timestamp() * 1000
-                ),
+                "nextFundingTime": int((OBSERVED + timedelta(hours=8)).timestamp() * 1000),
                 "time": int(OBSERVED.timestamp() * 1000),
             },
             headers={"content-type": "application/json"},

@@ -66,9 +66,7 @@ def build_aligned_temporal_window(
         window_seconds=window_seconds,
     )
     if window is None:
-        flags = tuple(
-            dict.fromkeys((*alignment.quality_flags, "TEMPORAL_WINDOW_NO_DATA"))
-        )
+        flags = tuple(dict.fromkeys((*alignment.quality_flags, "TEMPORAL_WINDOW_NO_DATA")))
         return AlignedTemporalWindow(
             alignment=alignment,
             window=None,
@@ -81,9 +79,7 @@ def build_aligned_temporal_window(
         raise ValueError("temporal window symbol must match aligned streams")
 
     flags = tuple(dict.fromkeys((*alignment.quality_flags, *window.quality_flags)))
-    temporal_blocked = (
-        not window.regime_eligible or "SPARSE_WINDOW" in window.quality_flags
-    )
+    temporal_blocked = not window.regime_eligible or "SPARSE_WINDOW" in window.quality_flags
     if temporal_blocked:
         blocked_flags = tuple(dict.fromkeys((*flags, "TEMPORAL_WINDOW_INELIGIBLE")))
         return AlignedTemporalWindow(

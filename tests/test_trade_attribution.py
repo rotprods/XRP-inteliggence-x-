@@ -224,9 +224,7 @@ def test_zero_depth_removal_has_no_coverage_ratio() -> None:
 
 def test_symbol_mismatch_is_rejected() -> None:
     with pytest.raises(ValueError, match="same symbol"):
-        reconcile_depth_with_order_flow(
-            depth(), flow(symbol="BTCUSDT"), flow_window_seconds=1.0
-        )
+        reconcile_depth_with_order_flow(depth(), flow(symbol="BTCUSDT"), flow_window_seconds=1.0)
 
 
 def test_naive_timestamp_is_rejected() -> None:
@@ -251,9 +249,7 @@ def test_declared_complete_without_envelope_is_rejected() -> None:
         provenance_complete=True,
     )
     with pytest.raises(ValueError, match="complete provenance"):
-        reconcile_depth_with_order_flow(
-            complete_depth(), invalid, flow_window_seconds=1.0
-        )
+        reconcile_depth_with_order_flow(complete_depth(), invalid, flow_window_seconds=1.0)
 
 
 @pytest.mark.parametrize("value", [0.0, -1.0, float("inf"), float("nan")])

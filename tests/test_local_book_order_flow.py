@@ -25,9 +25,7 @@ def _snapshot() -> OrderBookSnapshot:
 def test_first_delta_must_bridge_snapshot() -> None:
     book = LocalOrderBook.from_snapshot(_snapshot())
     with pytest.raises(BookSequenceError, match="bridge"):
-        book.apply_first_delta(
-            DepthDelta(102, 103, NOW, (BookLevel(1.400, 90),), ())
-        )
+        book.apply_first_delta(DepthDelta(102, 103, NOW, (BookLevel(1.400, 90),), ()))
 
 
 def test_sequence_gap_fails_closed_and_requires_resnapshot() -> None:

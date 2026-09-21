@@ -108,7 +108,6 @@ class LocalOrderBook:
             for price, quantity in sorted(self.bids.items(), reverse=True)[:levels]
         )
         asks = tuple(
-            BookLevel(price, quantity)
-            for price, quantity in sorted(self.asks.items())[:levels]
+            BookLevel(price, quantity) for price, quantity in sorted(self.asks.items())[:levels]
         )
         return bids, asks

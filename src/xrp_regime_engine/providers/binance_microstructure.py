@@ -20,7 +20,9 @@ class BinanceMicrostructureProvider(MarketDataProvider):
     async def fetch_candles(self, asset: str, interval: str, limit: int = 300):
         raise ProviderError("microstructure provider does not expose candles")
 
-    async def fetch_order_book(self, asset: str = "XRP_USDT", limit: int = 1000) -> OrderBookSnapshot:
+    async def fetch_order_book(
+        self, asset: str = "XRP_USDT", limit: int = 1000
+    ) -> OrderBookSnapshot:
         symbol = self.symbols.get(asset)
         if symbol is None:
             raise ProviderError(f"unsupported asset: {asset}")
