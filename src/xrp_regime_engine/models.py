@@ -279,10 +279,9 @@ class RegimeSnapshot(StrictModel):
     @field_validator("policy_digest", "feature_hash")
     @classmethod
     def validate_digest(cls, value: str, info: Any) -> str:
-        # Keep the runtime invariant explicit: assertions disappear under Python -O.
+        # The field type is non-optional; Pydantic rejects None before this validator.
         validated = _sha256_or_none(value, info.field_name)
-        if validated is None:
-            raise ValueError(f"{info.field_name} must be a SHA-256 digest")
+        assert validated is not None
         return validated
 
     @field_validator("component_coverage")
