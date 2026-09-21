@@ -25,6 +25,7 @@ class DepthTradeCompatibility:
     unmatched_aggressive_trade_notional: float | None
     removal_coverage_ratio: float | None
     evidence_eligible: bool
+    regime_eligible: bool
     causal_attribution_confirmed: bool
     quality_flags: tuple[str, ...]
     execution_weight: float = 0.0
@@ -57,7 +58,8 @@ def reconcile_depth_with_order_flow(
 
     This is compatibility accounting, not causal attribution. A quote-notional match
     cannot prove that a specific depth removal was executed rather than cancelled,
-    replaced, or modified between observations. The output is shadow evidence only.
+    replaced, or modified between observations. V1 lacks complete available/fetched
+    timestamps for both streams, so the output is never regime-eligible.
     """
     for field, value in (
         ("flow_window_seconds", flow_window_seconds),
@@ -80,7 +82,10 @@ def reconcile_depth_with_order_flow(
 
     event_end_skew = abs((flow.observed_at - dynamics.observed_at).total_seconds())
     window_skew = abs(flow_window_seconds - dynamics.elapsed_seconds)
-    flags: list[str] = ["CAUSAL_ATTRIBUTION_UNPROVEN"]
+    flags: list[str] = [
+        "CAUSAL_ATTRIBUTION_UNPROVEN",
+        "POINT_IN_TIME_PROVENANCE_INCOMPLETE",
+    ]
     aligned = True
     if event_end_skew > max_event_end_skew_seconds:
         flags.append("CROSS_STREAM_END_TIME_MISALIGNED")
@@ -107,6 +112,7 @@ def reconcile_depth_with_order_flow(
             unmatched_aggressive_trade_notional=None,
             removal_coverage_ratio=None,
             evidence_eligible=False,
+            regime_eligible=False,
             causal_attribution_confirmed=False,
             quality_flags=tuple(flags),
             execution_weight=0.0,
@@ -148,6 +154,7 @@ def reconcile_depth_with_order_flow(
         unmatched_aggressive_trade_notional=unmatched_trade,
         removal_coverage_ratio=coverage,
         evidence_eligible=True,
+        regime_eligible=False,
         causal_attribution_confirmed=False,
         quality_flags=tuple(flags),
         execution_weight=0.0,
