@@ -32,6 +32,7 @@ from xrp_regime_engine.walk_forward_v1 import (
 )
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
+DATASET = "dataset-version:sha256:" + "d" * 64
 
 
 def feature(index: int, actual: bool) -> HistoricalFeatureRow:
@@ -210,6 +211,7 @@ def test_training_guards_fail_closed() -> None:
 def test_factory_executes_all_baselines_and_freezes_oos_records() -> None:
     features, labels, _, folds = dataset()
     result = run_baseline_oos_factory(
+        dataset_version_id=DATASET,
         features=features,
         labels=labels,
         folds=folds,
@@ -228,10 +230,16 @@ def test_factory_executes_all_baselines_and_freezes_oos_records() -> None:
             max_log_loss_regression=0.0,
         ),
     )
+    assert result.dataset_version_id == DATASET
     assert len(result.model_kinds) == 5
     assert len(result.predictions) == len(folds) * 5
     assert len(result.outcomes) == len(result.predictions)
     assert len({item.prediction_id for item in result.predictions}) == len(result.predictions)
+    assert result.model_fit_ids
+    assert all(
+        item.model_version.startswith("baseline-fit:sha256:")
+        for item in result.predictions
+    )
     assert result.final_holdout_untouched is True
     assert result.probability_calibrated is False
     assert result.production_ready is False
@@ -252,6 +260,7 @@ def test_factory_executes_all_baselines_and_freezes_oos_records() -> None:
 def test_factory_supports_barrier_events() -> None:
     features, labels, _, folds = dataset()
     result = run_baseline_oos_factory(
+        dataset_version_id=DATASET,
         features=features,
         labels=labels,
         folds=folds,
@@ -272,6 +281,7 @@ def test_factory_fail_closed_on_scope_and_fold_corruption() -> None:
     features, labels, _, folds = dataset(8)
     with pytest.raises(ValueError, match="event_key"):
         run_baseline_oos_factory(
+            dataset_version_id=DATASET,
             features=features,
             labels=labels,
             folds=folds,
@@ -281,6 +291,7 @@ def test_factory_fail_closed_on_scope_and_fold_corruption() -> None:
         )
     with pytest.raises(ValueError, match="B0_BASE_RATE"):
         run_baseline_oos_factory(
+            dataset_version_id=DATASET,
             features=features,
             labels=labels,
             folds=folds,
@@ -291,6 +302,7 @@ def test_factory_fail_closed_on_scope_and_fold_corruption() -> None:
         )
     with pytest.raises(ValueError, match="folds cannot be empty"):
         run_baseline_oos_factory(
+            dataset_version_id=DATASET,
             features=features,
             labels=labels,
             folds=(),
@@ -305,6 +317,7 @@ def test_factory_fail_closed_on_scope_and_fold_corruption() -> None:
     )
     with pytest.raises(ValueError, match="unknown feature_row_id"):
         run_baseline_oos_factory(
+            dataset_version_id=DATASET,
             features=features,
             labels=labels,
             folds=(unknown,),
