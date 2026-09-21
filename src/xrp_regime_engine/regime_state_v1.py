@@ -279,6 +279,10 @@ def _signal(
     return float(signals.get(name, default))
 
 
+def _has(signals: Mapping[str, float], *names: str) -> bool:
+    return all(name in signals for name in names)
+
+
 def classify_regime(
     feature: HistoricalFeatureRow,
     *,
@@ -313,46 +317,64 @@ def classify_regime(
         drawdown = _signal(extracted, "drawdown_stress")
         liquidity = _signal(extracted, "liquidity")
 
-        if breakout <= selected.failed_breakout_threshold:
+        if _has(extracted, "breakout") and breakout <= selected.failed_breakout_threshold:
             regime = CanonicalRegime.FAILED_BREAKOUT
-        elif deleveraging >= selected.deleveraging_threshold:
+        elif _has(extracted, "deleveraging") and deleveraging >= selected.deleveraging_threshold:
             regime = CanonicalRegime.DELEVERAGING
         elif (
-            trend <= selected.capitulation_trend_threshold
+            _has(extracted, "trend", "volatility", "drawdown_stress")
+            and trend <= selected.capitulation_trend_threshold
             and volatility >= selected.capitulation_volatility_threshold
             and drawdown >= selected.capitulation_drawdown_threshold
         ):
             regime = CanonicalRegime.CAPITULATION
-        elif crowding >= selected.crowding_threshold and leverage >= selected.leverage_threshold:
+        elif (
+            _has(extracted, "crowding", "leverage")
+            and crowding >= selected.crowding_threshold
+            and leverage >= selected.leverage_threshold
+        ):
             regime = CanonicalRegime.LONG_CROWDING
-        elif distribution >= selected.distribution_threshold:
+        elif (
+            _has(extracted, "distribution")
+            and distribution >= selected.distribution_threshold
+        ):
             regime = CanonicalRegime.DISTRIBUTION
         elif (
-            breakout >= selected.breakout_threshold and trend >= selected.expansion_trend_threshold
+            _has(extracted, "breakout", "trend")
+            and breakout >= selected.breakout_threshold
+            and trend >= selected.expansion_trend_threshold
         ):
             regime = CanonicalRegime.BREAKOUT
         elif (
-            trend >= selected.expansion_trend_threshold
+            _has(extracted, "trend", "spot_flow", "leverage")
+            and trend >= selected.expansion_trend_threshold
             and spot_flow >= selected.spot_flow_threshold
             and leverage < selected.leverage_threshold
         ):
             regime = CanonicalRegime.SPOT_LED_EXPANSION
         elif (
-            trend >= selected.expansion_trend_threshold
+            _has(extracted, "trend", "leverage", "crowding")
+            and trend >= selected.expansion_trend_threshold
             and leverage >= selected.leverage_threshold
             and crowding < selected.crowding_threshold
         ):
             regime = CanonicalRegime.LEVERAGED_EXPANSION
-        elif trend >= selected.recovery_trend_threshold and drawdown >= 0.30:
+        elif (
+            _has(extracted, "trend", "drawdown_stress")
+            and trend >= selected.recovery_trend_threshold
+            and drawdown >= 0.30
+        ):
             regime = CanonicalRegime.RECOVERY
         elif (
-            liquidity >= selected.risk_on_liquidity_threshold
+            _has(extracted, "liquidity", "trend", "relative_strength")
+            and liquidity >= selected.risk_on_liquidity_threshold
             and trend >= selected.recovery_trend_threshold
             and relative >= 0.0
         ):
             regime = CanonicalRegime.RISK_ON
         elif (
-            abs(trend) <= selected.accumulation_abs_trend_max
+            _has(extracted, "trend", "spot_flow", "leverage", "distribution")
+            and abs(trend) <= selected.accumulation_abs_trend_max
             and spot_flow >= 0.10
             and leverage < selected.leverage_threshold
             and distribution < selected.distribution_threshold
