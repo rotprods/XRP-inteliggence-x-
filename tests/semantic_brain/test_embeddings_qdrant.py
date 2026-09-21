@@ -65,9 +65,11 @@ def test_qdrant_unexpected_collection_error_fails_closed() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, request=request)
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        with pytest.raises(httpx.HTTPStatusError):
-            QdrantIndex(QdrantConfig(), client=client).ensure_collection()
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        QdrantIndex(QdrantConfig(), client=client).ensure_collection()
 
 
 def test_qdrant_upsert_and_query_are_hermetic_and_preserve_filters() -> None:
