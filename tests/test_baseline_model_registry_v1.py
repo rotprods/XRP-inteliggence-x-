@@ -151,3 +151,43 @@ def test_registry_rejects_challenger_without_eligible_skill() -> None:
     )
     with pytest.raises(ValueError, match="not eligible"):
         build_baseline_model_registry(replace(source, cells=(bad_cell,)))
+
+
+
+def test_registry_rejects_holdout_execution_and_dataset_identity_corruption() -> None:
+    source = matrix()
+
+    with pytest.raises(ValueError, match="preserve final holdout"):
+        build_baseline_model_registry(
+            replace(source, runs=(replace(source.runs[0], final_holdout_untouched=False),))
+        )
+
+    with pytest.raises(ValueError, match="execution_weight"):
+        build_baseline_model_registry(
+            replace(source, runs=(replace(source.runs[0], execution_weight=1.0),))
+        )
+
+    with pytest.raises(ValueError, match="DatasetVersion"):
+        build_baseline_model_registry(
+            replace(source, runs=(replace(source.runs[0], dataset_version_id="bad"),))
+        )
+
+    with pytest.raises(ValueError, match="baseline matrix must preserve final holdout"):
+        build_baseline_model_registry(replace(source, final_holdout_untouched=False))
+
+    with pytest.raises(ValueError, match="baseline matrix execution_weight"):
+        build_baseline_model_registry(replace(source, execution_weight=1.0))
+
+
+def test_registry_rejects_duplicate_skill_key_inside_run() -> None:
+    source = matrix()
+    run = source.runs[0]
+    duplicated_skill = run.skills[0]
+    bad_run = replace(
+        run,
+        skills=(duplicated_skill, duplicated_skill),
+    )
+    with pytest.raises(ValueError, match="duplicate registry entry"):
+        build_baseline_model_registry(
+            replace(source, runs=(bad_run,))
+        )
