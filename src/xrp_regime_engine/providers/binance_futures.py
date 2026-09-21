@@ -27,6 +27,7 @@ class BinanceFuturesProvider(MarketDataProvider):
         payload, _, digest = await self._request_json(
             "GET", "/fapi/v1/premiumIndex", params={"symbol": symbol}
         )
+        fetched_at = datetime.now(UTC)
         if not isinstance(payload, dict):
             raise ProviderError("Binance returned unexpected premium-index data")
         try:
@@ -39,6 +40,7 @@ class BinanceFuturesProvider(MarketDataProvider):
                 index_price=float(payload["indexPrice"]),
                 funding_rate=float(payload["lastFundingRate"]),
                 next_funding_at=next_funding,
+                fetched_at=fetched_at,
                 payload_sha256=digest,
             )
         except (KeyError, TypeError, ValueError) as exc:
@@ -51,6 +53,7 @@ class BinanceFuturesProvider(MarketDataProvider):
         payload, _, digest = await self._request_json(
             "GET", "/fapi/v1/openInterest", params={"symbol": symbol}
         )
+        fetched_at = datetime.now(UTC)
         if not isinstance(payload, dict):
             raise ProviderError("Binance returned unexpected open-interest data")
         try:
@@ -59,6 +62,7 @@ class BinanceFuturesProvider(MarketDataProvider):
                 symbol=symbol,
                 observed_at=observed_at,
                 open_interest=float(payload["openInterest"]),
+                fetched_at=fetched_at,
                 payload_sha256=digest,
             )
         except (KeyError, TypeError, ValueError) as exc:
