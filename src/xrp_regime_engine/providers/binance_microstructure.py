@@ -18,9 +18,7 @@ class BinanceMicrostructureProvider(MarketDataProvider):
     def health_path(self) -> str:
         return "/api/v3/ping"
 
-    async def fetch_candles(
-        self, asset: str, interval: str, limit: int = 300
-    ) -> list[Candle]:
+    async def fetch_candles(self, asset: str, interval: str, limit: int = 300) -> list[Candle]:
         raise ProviderError("microstructure provider does not expose candles")
 
     async def fetch_order_book(
