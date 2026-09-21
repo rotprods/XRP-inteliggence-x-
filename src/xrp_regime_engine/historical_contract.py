@@ -255,14 +255,21 @@ def select_as_of(
     allow_reconstructed: bool = False,
 ) -> tuple[HistoricalObservation, ...]:
     prediction = _utc(prediction_time, "prediction_time")
-    groups: dict[tuple[str, str, str], list[HistoricalObservation]] = {}
+    groups: dict[tuple[str, str, str, str, str, str], list[HistoricalObservation]] = {}
     for observation in observations:
         eligibility = observation.eligibility_at(prediction)
         if eligibility is EligibilityClass.INELIGIBLE:
             continue
         if eligibility is EligibilityClass.RECONSTRUCTED_PIT and not allow_reconstructed:
             continue
-        key = (observation.record_id, observation.provider, observation.source_id)
+        key = (
+            observation.dataset,
+            observation.record_id,
+            observation.provider,
+            observation.source_id,
+            observation.symbol,
+            observation.instrument,
+        )
         groups.setdefault(key, []).append(observation)
 
     selected: list[HistoricalObservation] = []
@@ -271,9 +278,7 @@ def select_as_of(
         best_rank = max(_revision_rank(item) for item in candidates)
         best = [item for item in candidates if _revision_rank(item) == best_rank]
         if len({item.canonical_sha256 for item in best}) > 1:
-            raise AmbiguousRevisionError(
-                f"equally ranked revisions disagree for {key!r}"
-            )
+            raise AmbiguousRevisionError(f"equally ranked revisions disagree for {key!r}")
         selected.append(min(best, key=lambda item: item.observation_id))
     return tuple(selected)
 
@@ -301,6 +306,9 @@ class SourceSnapshot:
         ordered = tuple(sorted(observations, key=lambda item: item.observation_id))
         if not ordered:
             raise ValueError("source snapshot requires observations")
+        ids = tuple(item.observation_id for item in ordered)
+        if len(ids) != len(set(ids)):
+            raise ValueError("source snapshot observation_id values must be unique")
         classes = tuple(item.eligibility_at(prediction) for item in ordered)
         if EligibilityClass.INELIGIBLE in classes:
             raise ValueError("source snapshot contains ineligible observations")
@@ -311,7 +319,6 @@ class SourceSnapshot:
             if EligibilityClass.RECONSTRUCTED_PIT in classes
             else EligibilityClass.STRICT_REPLAY
         )
-        ids = tuple(item.observation_id for item in ordered)
         hashes = tuple(item.canonical_sha256 for item in ordered)
         fetches = tuple(sorted({item.fetch_id for item in ordered}))
         providers = tuple(sorted({item.provider for item in ordered}))

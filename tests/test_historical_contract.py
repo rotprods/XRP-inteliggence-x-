@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 
@@ -103,12 +104,14 @@ def test_date_only_fails_closed_until_next_utc_day() -> None:
         available_date=date(2026, 1, 2),
         fetched_at=T0 - timedelta(days=1),
     )
-    assert item.eligibility_at(
-        datetime(2026, 1, 2, 23, 59, tzinfo=UTC)
-    ) is EligibilityClass.INELIGIBLE
-    assert item.eligibility_at(
-        datetime(2026, 1, 3, 0, 0, tzinfo=UTC)
-    ) is EligibilityClass.STRICT_REPLAY
+    assert (
+        item.eligibility_at(datetime(2026, 1, 2, 23, 59, tzinfo=UTC))
+        is EligibilityClass.INELIGIBLE
+    )
+    assert (
+        item.eligibility_at(datetime(2026, 1, 3, 0, 0, tzinfo=UTC))
+        is EligibilityClass.STRICT_REPLAY
+    )
 
 
 def test_unknown_availability_is_ineligible() -> None:
@@ -123,6 +126,13 @@ def test_unknown_availability_is_ineligible() -> None:
 def test_as_of_preserves_provider_independence() -> None:
     rows = select_as_of((obs("a"), obs("b", provider="binance")), prediction_time=T0)
     assert {row.provider for row in rows} == {"coinbase", "binance"}
+
+
+def test_as_of_preserves_distinct_logical_series() -> None:
+    hourly = obs("hourly")
+    five_minute = replace(obs("five-minute"), dataset="xrp_spot_5m")
+    rows = select_as_of((hourly, five_minute), prediction_time=T0)
+    assert {row.dataset for row in rows} == {"xrp_spot_1h", "xrp_spot_5m"}
 
 
 def test_as_of_rejects_future_revision() -> None:
@@ -155,6 +165,13 @@ def test_snapshot_is_order_independent() -> None:
     right = SourceSnapshot.build((b, a), prediction_time=T0)
     assert left.snapshot_sha256 == right.snapshot_sha256
     assert left.provider_universe == ("binance", "coinbase")
+
+
+def test_snapshot_rejects_duplicate_observation_ids() -> None:
+    first = obs("duplicate")
+    second = replace(obs("duplicate", provider="binance"), observation_id="duplicate")
+    with pytest.raises(ValueError, match="observation_id values must be unique"):
+        SourceSnapshot.build((first, second), prediction_time=T0)
 
 
 def test_snapshot_reconstructed_requires_opt_in() -> None:
