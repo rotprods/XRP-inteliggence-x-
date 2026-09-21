@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -65,3 +65,45 @@ def test_cvd_uses_aggressor_side_not_trade_sign_guessing() -> None:
     assert flow.aggressive_sell_notional == pytest.approx(70.5)
     assert flow.cvd_quote == pytest.approx(69.5)
     assert flow.taker_imbalance > 0
+    assert flow.provenance_complete is False
+
+
+def test_aggregate_trade_provenance_envelope_is_derived_from_events() -> None:
+    trades = (
+        AggregateTrade(
+            1,
+            1.40,
+            100,
+            NOW,
+            buyer_is_maker=False,
+            available_at=NOW + timedelta(milliseconds=10),
+            fetched_at=NOW + timedelta(milliseconds=20),
+        ),
+        AggregateTrade(
+            2,
+            1.41,
+            50,
+            NOW + timedelta(seconds=1),
+            buyer_is_maker=True,
+            available_at=NOW + timedelta(seconds=1, milliseconds=10),
+            fetched_at=NOW + timedelta(seconds=1, milliseconds=20),
+        ),
+    )
+    flow = compute_order_flow("XRPUSDT", trades)
+    assert flow.provenance_complete is True
+    assert flow.first_observed_at == NOW
+    assert flow.last_observed_at == NOW + timedelta(seconds=1)
+    assert flow.first_available_at == NOW + timedelta(milliseconds=10)
+    assert flow.last_fetched_at == NOW + timedelta(seconds=1, milliseconds=20)
+
+
+def test_partial_trade_provenance_is_rejected() -> None:
+    with pytest.raises(ValueError, match="provided together"):
+        AggregateTrade(
+            1,
+            1.40,
+            100,
+            NOW,
+            buyer_is_maker=False,
+            available_at=NOW + timedelta(milliseconds=10),
+        )
