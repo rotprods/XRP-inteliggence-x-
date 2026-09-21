@@ -126,11 +126,17 @@ class DatasetVersion:
 
     def __post_init__(self) -> None:
         _content_id(self.dataset_version_id, "dataset-version:sha256:", "dataset_version_id")
-        _content_id(f"dataset-version:sha256:{self.dataset_sha256}", "dataset-version:sha256:", "dataset_sha256")
+        _content_id(
+            f"dataset-version:sha256:{self.dataset_sha256}",
+            "dataset-version:sha256:",
+            "dataset_sha256",
+        )
         object.__setattr__(self, "dataset_key", _text(self.dataset_key, "dataset_key"))
         object.__setattr__(self, "schema_version", _text(self.schema_version, "schema_version"))
         object.__setattr__(
-            self, "feature_schema_version", _text(self.feature_schema_version, "feature_schema_version")
+            self,
+            "feature_schema_version",
+            _text(self.feature_schema_version, "feature_schema_version"),
         )
         object.__setattr__(
             self, "label_schema_version", _text(self.label_schema_version, "label_schema_version")
@@ -316,12 +322,10 @@ def build_dataset_version(
         "dataset_key": dataset_key,
         "schema_version": schema_version,
         "source_manifests": [
-            {"id": item.manifest_id, "sha256": item.manifest_sha256}
-            for item in ordered_manifests
+            {"id": item.manifest_id, "sha256": item.manifest_sha256} for item in ordered_manifests
         ],
         "partitions": [
-            {"id": item.partition_id, "sha256": item.file_sha256}
-            for item in ordered_partitions
+            {"id": item.partition_id, "sha256": item.file_sha256} for item in ordered_partitions
         ],
         "feature_schema_version": feature_schema_version,
         "label_schema_version": label_schema_version,
