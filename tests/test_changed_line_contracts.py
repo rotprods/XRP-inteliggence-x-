@@ -522,10 +522,7 @@ def test_temporal_sample_validation_and_window_selection_edges() -> None:
         fetched_at=prediction + timedelta(seconds=2),
     )
     assert (
-        build_temporal_window(
-            (unavailable,), prediction_time=prediction, window_seconds=60
-        )
-        is None
+        build_temporal_window((unavailable,), prediction_time=prediction, window_seconds=60) is None
     )
 
 
