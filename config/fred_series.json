@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "series": {
+    "US2Y": "DGS2",
+    "US10Y": "DGS10",
+    "US30Y": "DGS30",
+    "REAL10Y": "DFII10",
+    "VIX": "VIXCLS",
+    "WTI": "DCOILWTICO",
+    "GASOLINE": "GASREGW",
+    "NATGAS": "DHHNGSP",
+    "FINANCIAL_CONDITIONS": "NFCI",
+    "FED_BALANCE_SHEET": "WALCL",
+    "M2": "M2SL"
+  }
+}

@@ -1,0 +1,5 @@
+Remote target base: 05cf97517bee99f70b4216ff8823c237a9d5c6bf (`main`, README-only repository)
+Local forensic baseline: 1f11dfbed78cd02cbfbcc6cfcc0d8bf1323df47c
+Local hardening commit: fc05abeda539e60b59bbf72361f70c0be5464d1f
+
+Promotion must create a new commit whose parent is the remote target base; do not force-push unrelated local history.

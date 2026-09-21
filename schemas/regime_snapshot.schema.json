@@ -1,0 +1,267 @@
+{
+  "$defs": {
+    "ComponentScores": {
+      "additionalProperties": false,
+      "properties": {
+        "crypto": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Crypto",
+          "type": "number"
+        },
+        "data_quality": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Data Quality",
+          "type": "number"
+        },
+        "derivatives": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Derivatives",
+          "type": "number"
+        },
+        "macro": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Macro",
+          "type": "number"
+        },
+        "xrp_relative": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Xrp Relative",
+          "type": "number"
+        },
+        "xrpl": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Xrpl",
+          "type": "number"
+        }
+      },
+      "required": [
+        "macro",
+        "crypto",
+        "xrp_relative",
+        "derivatives",
+        "xrpl",
+        "data_quality"
+      ],
+      "title": "ComponentScores",
+      "type": "object"
+    },
+    "DataFlag": {
+      "enum": [
+        "STALE",
+        "OUTLIER",
+        "CONFLICT",
+        "MISSING",
+        "SYNTHETIC",
+        "REVISED",
+        "INVALID"
+      ],
+      "title": "DataFlag",
+      "type": "string"
+    },
+    "Horizon": {
+      "enum": [
+        "1h",
+        "4h",
+        "1d",
+        "1w"
+      ],
+      "title": "Horizon",
+      "type": "string"
+    },
+    "RegimeLabel": {
+      "enum": [
+        "STRONG_BULL",
+        "BULLISH",
+        "NEUTRAL",
+        "BEARISH",
+        "STRONG_BEAR",
+        "DEGRADED"
+      ],
+      "title": "RegimeLabel",
+      "type": "string"
+    }
+  },
+  "$id": "https://rotprods.local/schemas/regime_snapshot.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "asset": {
+      "default": "XRP",
+      "title": "Asset",
+      "type": "string"
+    },
+    "bear_score": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Bear Score",
+      "type": "number"
+    },
+    "block_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Block Reasons",
+      "type": "array"
+    },
+    "bull_score": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Bull Score",
+      "type": "number"
+    },
+    "component_coverage": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Component Coverage",
+      "type": "object"
+    },
+    "components": {
+      "$ref": "#/$defs/ComponentScores"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "data_confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Data Confidence",
+      "type": "number"
+    },
+    "data_flags": {
+      "items": {
+        "$ref": "#/$defs/DataFlag"
+      },
+      "title": "Data Flags",
+      "type": "array"
+    },
+    "directional_conviction": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Directional Conviction",
+      "type": "number"
+    },
+    "distribution_risk": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Distribution Risk",
+      "type": "number"
+    },
+    "feature_hash": {
+      "title": "Feature Hash",
+      "type": "string"
+    },
+    "feature_values": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": "Feature Values",
+      "type": "object"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "historical_analogues": {
+      "items": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "title": "Historical Analogues",
+      "type": "array"
+    },
+    "horizon": {
+      "$ref": "#/$defs/Horizon"
+    },
+    "invalidations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Invalidations",
+      "type": "array"
+    },
+    "key_drivers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Key Drivers",
+      "type": "array"
+    },
+    "model_confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Model Confidence",
+      "type": "number"
+    },
+    "output_blocked": {
+      "default": false,
+      "title": "Output Blocked",
+      "type": "boolean"
+    },
+    "policy_digest": {
+      "title": "Policy Digest",
+      "type": "string"
+    },
+    "policy_version": {
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "regime": {
+      "$ref": "#/$defs/RegimeLabel"
+    },
+    "squeeze_risk": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Squeeze Risk",
+      "type": "number"
+    }
+  },
+  "required": [
+    "horizon",
+    "generated_at",
+    "regime",
+    "policy_version",
+    "policy_digest",
+    "bull_score",
+    "bear_score",
+    "squeeze_risk",
+    "distribution_risk",
+    "confidence",
+    "data_confidence",
+    "model_confidence",
+    "directional_conviction",
+    "components",
+    "key_drivers",
+    "invalidations",
+    "feature_hash"
+  ],
+  "title": "RegimeSnapshot",
+  "type": "object"
+}
