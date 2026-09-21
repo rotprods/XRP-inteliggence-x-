@@ -1,0 +1,86 @@
+name: Q1 Security Remediation Staging
+
+on:
+  push:
+    branches:
+      - fix/q1-mypy-strict-20260921
+
+permissions:
+  contents: write
+
+concurrency:
+  group: q1-security-remediation-staging
+  cancel-in-progress: false
+
+jobs:
+  remediate-and-validate:
+    if: ${{ !contains(github.event.head_commit.message, '[security-remediation-bot]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Apply bounded security remediations
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          models = Path('src/xrp_regime_engine/models.py')
+          text = models.read_text()
+          old = '''        # The field type is non-optional; Pydantic rejects None before this validator.\n        validated = _sha256_or_none(value, info.field_name)\n        assert validated is not None\n        return validated\n'''
+          new = '''        # Keep the runtime invariant explicit: assertions disappear under Python -O.\n        validated = _sha256_or_none(value, info.field_name)\n        if validated is None:\n            raise ValueError(f"{info.field_name} must be a SHA-256 digest")\n        return validated\n'''
+          if text.count(old) != 1:
+              raise SystemExit('models.py expected validator block not found exactly once')
+          models.write_text(text.replace(old, new, 1))
+
+          storage = Path('src/xrp_regime_engine/storage.py')
+          text = storage.read_text()
+          if text.count('SCHEMA = f"""') != 1:
+              raise SystemExit('storage.py expected f-string schema marker not found exactly once')
+          text = text.replace('SCHEMA = f"""', 'SCHEMA = """', 1)
+          old_insert = '''INSERT INTO schema_metadata(key, value) VALUES ('schema_version', '{SCHEMA_VERSION}')\nON CONFLICT(key) DO UPDATE SET value=excluded.value;\n\n'''
+          if text.count(old_insert) != 1:
+              raise SystemExit('storage.py expected interpolated schema insert not found exactly once')
+          text = text.replace(old_insert, '', 1)
+          old_init = '''        with self.connection() as conn:\n            conn.executescript(SCHEMA)\n'''
+          new_init = '''        with self.connection() as conn:\n            conn.executescript(SCHEMA)\n            conn.execute(\n                "INSERT INTO schema_metadata(key, value) VALUES (?, ?) "\n                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",\n                ("schema_version", str(SCHEMA_VERSION)),\n            )\n'''
+          if text.count(old_init) != 1:
+              raise SystemExit('storage.py expected schema initialization block not found exactly once')
+          storage.write_text(text.replace(old_init, new_init, 1))
+          PY
+      - name: Install verification dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Dependency consistency
+        run: python -m pip check
+      - name: Canonical format
+        run: python -m ruff format src/xrp_regime_engine/models.py src/xrp_regime_engine/storage.py
+      - name: Compile
+        run: make compile
+      - name: Ruff lint
+        run: make lint
+      - name: Ruff format fixed point
+        run: make format-check
+      - name: Strict mypy
+        run: make type
+      - name: Bandit
+        run: make security
+      - name: Hermetic fast tests
+        run: make test-fast
+      - name: Patch integrity
+        run: git diff --check
+      - name: Commit validated remediation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/xrp_regime_engine/models.py src/xrp_regime_engine/storage.py
+          git diff --cached --check
+          git commit -m 'fix(security): enforce digest invariant and parameterize schema metadata [security-remediation-bot]'
+          git push origin HEAD:fix/q1-mypy-strict-20260921
