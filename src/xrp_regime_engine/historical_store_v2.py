@@ -142,7 +142,7 @@ def _observation_from_payload(payload: Mapping[str, object]) -> HistoricalObserv
         available_date=date.fromisoformat(str(available_date_raw))
         if available_date_raw is not None
         else None,
-        revision_sequence=int(revision_raw) if revision_raw is not None else None,
+        revision_sequence=int(str(revision_raw)) if revision_raw is not None else None,
         reconstruction_basis_id=str(payload["reconstruction_basis_id"])
         if payload.get("reconstruction_basis_id") is not None
         else None,
