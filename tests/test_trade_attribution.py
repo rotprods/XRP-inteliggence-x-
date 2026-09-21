@@ -55,10 +55,58 @@ def flow(
     )
 
 
+def complete_depth() -> DepthDynamics:
+    return DepthDynamics(
+        symbol="XRPUSDT",
+        observed_at=NOW + timedelta(seconds=1),
+        first_update_id=10,
+        final_update_id=11,
+        elapsed_seconds=1.0,
+        bid_added_notional=0.0,
+        bid_removed_notional=600.0,
+        ask_added_notional=0.0,
+        ask_removed_notional=400.0,
+        bid_net_notional=-600.0,
+        ask_net_notional=-400.0,
+        gross_churn_notional=1000.0,
+        churn_quote_per_second=1000.0,
+        trade_attribution_confirmed=False,
+        quality_flags=("TRADE_ATTRIBUTION_REQUIRED",),
+        first_observed_at=NOW,
+        last_observed_at=NOW + timedelta(seconds=1),
+        first_available_at=NOW + timedelta(milliseconds=10),
+        last_available_at=NOW + timedelta(seconds=1, milliseconds=10),
+        first_fetched_at=NOW + timedelta(milliseconds=20),
+        last_fetched_at=NOW + timedelta(seconds=1, milliseconds=20),
+        provenance_complete=True,
+        execution_weight=0.0,
+    )
+
+
+def complete_flow() -> OrderFlowState:
+    return OrderFlowState(
+        symbol="XRPUSDT",
+        observed_at=NOW + timedelta(seconds=1),
+        aggressive_buy_notional=300.0,
+        aggressive_sell_notional=500.0,
+        cvd_quote=-200.0,
+        taker_imbalance=-0.25,
+        trade_count=10,
+        first_observed_at=NOW,
+        last_observed_at=NOW + timedelta(seconds=1),
+        first_available_at=NOW + timedelta(milliseconds=15),
+        last_available_at=NOW + timedelta(seconds=1, milliseconds=15),
+        first_fetched_at=NOW + timedelta(milliseconds=25),
+        last_fetched_at=NOW + timedelta(seconds=1, milliseconds=25),
+        provenance_complete=True,
+    )
+
+
 def test_aligned_streams_emit_compatibility_not_causal_attribution() -> None:
     state = reconcile_depth_with_order_flow(depth(), flow(), flow_window_seconds=1.0)
     assert state.evidence_eligible is True
     assert state.regime_eligible is False
+    assert state.point_in_time_eligible is False
     assert state.bid_trade_compatible_notional == 500.0
     assert state.ask_trade_compatible_notional == 300.0
     assert state.trade_compatible_removed_notional == 800.0
@@ -68,8 +116,31 @@ def test_aligned_streams_emit_compatibility_not_causal_attribution() -> None:
     assert state.causal_attribution_confirmed is False
     assert "TRADE_CONSUMPTION_COMPATIBLE_ONLY" in state.quality_flags
     assert "POINT_IN_TIME_PROVENANCE_INCOMPLETE" in state.quality_flags
+    assert "CALLER_WINDOW_FALLBACK" in state.quality_flags
     assert "REMOVAL_CANDIDATE_RESIDUAL" in state.quality_flags
     assert state.execution_weight == 0.0
+
+
+def test_complete_provenance_derives_cross_stream_windows() -> None:
+    state = reconcile_depth_with_order_flow(complete_depth(), complete_flow())
+    assert state.depth_window_seconds == 1.0
+    assert state.flow_window_seconds == 1.0
+    assert state.window_skew_seconds == 0.0
+    assert state.point_in_time_eligible is True
+    assert state.regime_eligible is False
+    assert "POINT_IN_TIME_PROVENANCE_COMPLETE_SHADOW_ONLY" in state.quality_flags
+    assert "CALLER_WINDOW_FALLBACK" not in state.quality_flags
+    assert state.execution_weight == 0.0
+
+
+def test_complete_provenance_ignores_conflicting_caller_window() -> None:
+    state = reconcile_depth_with_order_flow(
+        complete_depth(), complete_flow(), flow_window_seconds=99.0
+    )
+    assert state.flow_window_seconds == 1.0
+    assert state.point_in_time_eligible is True
+    assert "CALLER_WINDOW_IGNORED" in state.quality_flags
+    assert "CROSS_STREAM_WINDOW_MISALIGNED" not in state.quality_flags
 
 
 def test_end_time_misalignment_fails_closed_without_pairing_notionals() -> None:
@@ -80,6 +151,7 @@ def test_end_time_misalignment_fails_closed_without_pairing_notionals() -> None:
     )
     assert state.evidence_eligible is False
     assert state.regime_eligible is False
+    assert state.point_in_time_eligible is False
     assert state.trade_compatible_removed_notional is None
     assert state.removal_candidate_residual_notional is None
     assert "CROSS_STREAM_END_TIME_MISALIGNED" in state.quality_flags
@@ -132,6 +204,24 @@ def test_naive_timestamp_is_rejected() -> None:
             depth(),
             flow(observed_at=NOW.replace(tzinfo=None)),
             flow_window_seconds=1.0,
+        )
+
+
+def test_declared_complete_without_envelope_is_rejected() -> None:
+    incomplete = flow()
+    invalid = OrderFlowState(
+        symbol=incomplete.symbol,
+        observed_at=incomplete.observed_at,
+        aggressive_buy_notional=incomplete.aggressive_buy_notional,
+        aggressive_sell_notional=incomplete.aggressive_sell_notional,
+        cvd_quote=incomplete.cvd_quote,
+        taker_imbalance=incomplete.taker_imbalance,
+        trade_count=incomplete.trade_count,
+        provenance_complete=True,
+    )
+    with pytest.raises(ValueError, match="complete provenance"):
+        reconcile_depth_with_order_flow(
+            complete_depth(), invalid, flow_window_seconds=1.0
         )
 
 
