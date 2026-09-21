@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
@@ -182,6 +183,47 @@ def test_present_bundle_must_be_complete() -> None:
     with pytest.raises(ValueError, match="features, labels and folds"):
         build_baseline_research_matrix(
             {ResearchHorizon.H1: empty},
+            required_horizons=(ResearchHorizon.H1,),
+            event_keys=("return_gt_0",),
+            feature_keys=("market.signal",),
+            momentum_feature_key="market.signal",
+        )
+
+
+
+def test_matrix_rejects_label_and_fold_horizon_contamination() -> None:
+    item = bundle(ResearchHorizon.H1)
+
+    wrong_labels = tuple(
+        replace(label, horizon=ResearchHorizon.H4)
+        for label in item.labels
+    )
+    with pytest.raises(ValueError, match="label horizon"):
+        build_baseline_research_matrix(
+            {
+                ResearchHorizon.H1: replace(
+                    item,
+                    labels=wrong_labels,
+                )
+            },
+            required_horizons=(ResearchHorizon.H1,),
+            event_keys=("return_gt_0",),
+            feature_keys=("market.signal",),
+            momentum_feature_key="market.signal",
+        )
+
+    wrong_folds = tuple(
+        replace(fold, horizon=ResearchHorizon.H4)
+        for fold in item.folds
+    )
+    with pytest.raises(ValueError, match="fold horizon"):
+        build_baseline_research_matrix(
+            {
+                ResearchHorizon.H1: replace(
+                    item,
+                    folds=wrong_folds,
+                )
+            },
             required_horizons=(ResearchHorizon.H1,),
             event_keys=("return_gt_0",),
             feature_keys=("market.signal",),
