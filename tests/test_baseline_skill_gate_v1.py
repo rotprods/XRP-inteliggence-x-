@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
@@ -298,11 +299,9 @@ def test_factory_fail_closed_on_scope_and_fold_corruption() -> None:
             momentum_feature_key="market.signal",
         )
     broken = folds[0]
-    unknown = type(broken)(
-        **{
-            **broken.__dict__,
-            "train_feature_row_ids": ("feature:sha256:" + "f" * 64,),
-        }
+    unknown = replace(
+        broken,
+        train_feature_row_ids=("feature:sha256:" + "f" * 64,),
     )
     with pytest.raises(ValueError, match="unknown feature_row_id"):
         run_baseline_oos_factory(
