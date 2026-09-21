@@ -9,7 +9,7 @@ from xrp_regime_engine.microstructure import BookLevel, OrderBookSnapshot
 NOW = datetime(2026, 9, 21, 1, 0, tzinfo=UTC)
 
 
-def _book() -> LocalOrderBook:
+def _book(*, complete_first_delta_provenance: bool = False) -> LocalOrderBook:
     snapshot = OrderBookSnapshot(
         symbol="XRPUSDT",
         last_update_id=100,
@@ -21,6 +21,12 @@ def _book() -> LocalOrderBook:
         payload_hash="0" * 64,
     )
     book = LocalOrderBook.from_snapshot(snapshot)
+    kwargs = {}
+    if complete_first_delta_provenance:
+        kwargs = {
+            "available_at": NOW + timedelta(milliseconds=110),
+            "fetched_at": NOW + timedelta(milliseconds=120),
+        }
     book.apply_first_delta(
         DepthDelta(
             101,
@@ -28,6 +34,7 @@ def _book() -> LocalOrderBook:
             NOW + timedelta(milliseconds=100),
             (BookLevel(1.400, 100),),
             (BookLevel(1.401, 100),),
+            **kwargs,
         )
     )
     return book
@@ -53,7 +60,33 @@ def test_depth_dynamics_account_added_removed_notional_without_causal_claim() ->
     assert state.gross_churn_notional > 0
     assert state.churn_quote_per_second > 0
     assert state.trade_attribution_confirmed is False
+    assert state.provenance_complete is False
     assert "TRADE_ATTRIBUTION_REQUIRED" in state.quality_flags
+    assert "POINT_IN_TIME_PROVENANCE_INCOMPLETE" in state.quality_flags
+    assert state.execution_weight == 0.0
+
+
+def test_second_depth_delta_can_emit_complete_point_in_time_envelope() -> None:
+    book = _book(complete_first_delta_provenance=True)
+    state = apply_delta_with_dynamics(
+        book,
+        DepthDelta(
+            102,
+            102,
+            NOW + timedelta(milliseconds=200),
+            (BookLevel(1.400, 90),),
+            (BookLevel(1.401, 90),),
+            available_at=NOW + timedelta(milliseconds=210),
+            fetched_at=NOW + timedelta(milliseconds=220),
+        ),
+    )
+    assert state is not None
+    assert state.provenance_complete is True
+    assert state.first_observed_at == NOW + timedelta(milliseconds=100)
+    assert state.last_observed_at == NOW + timedelta(milliseconds=200)
+    assert state.first_available_at == NOW + timedelta(milliseconds=110)
+    assert state.last_fetched_at == NOW + timedelta(milliseconds=220)
+    assert "POINT_IN_TIME_PROVENANCE_INCOMPLETE" not in state.quality_flags
     assert state.execution_weight == 0.0
 
 
