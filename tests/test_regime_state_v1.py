@@ -119,9 +119,7 @@ def test_regime_state_is_deterministic_and_content_addressed() -> None:
 
 
 def test_missing_required_signal_and_low_coverage_fail_to_no_data() -> None:
-    missing = classify_regime(
-        feature_from_signals(3, {"trend": 0.5}, omit=("relative_strength",))
-    )
+    missing = classify_regime(feature_from_signals(3, {"trend": 0.5}, omit=("relative_strength",)))
     assert missing.regime is CanonicalRegime.NO_DATA
     assert any(reason.startswith("MISSING_REQUIRED_SIGNALS:") for reason in missing.reasons)
 
