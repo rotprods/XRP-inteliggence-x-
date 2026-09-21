@@ -41,7 +41,9 @@ class QdrantIndex:
         url = f"{self.config.base_url}/collections/{self.config.collection}/points?wait=true"
         self.client.put(url, json={"points": points}).raise_for_status()
 
-    def query(self, vector: list[float], limit: int = 10, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(
+        self, vector: list[float], limit: int = 10, filters: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         url = f"{self.config.base_url}/collections/{self.config.collection}/points/query"
         body: dict[str, Any] = {
             "query": vector,
