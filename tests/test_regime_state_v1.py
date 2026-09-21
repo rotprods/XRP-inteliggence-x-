@@ -199,3 +199,19 @@ def test_signal_feature_key_requires_family_name() -> None:
     spec = RegimeSignalSpec("bad", "notdotted")
     with pytest.raises(ValueError, match="family.name"):
         spec.transform(item)
+
+
+
+def test_missing_optional_signal_is_not_treated_as_neutral_evidence() -> None:
+    item = feature_from_signals(
+        7,
+        {
+            "trend": 0.5,
+            "spot_flow": 0.7,
+        },
+        omit=("leverage",),
+    )
+    state = classify_regime(item)
+    assert state.signal_coverage > 0.70
+    assert state.regime is CanonicalRegime.NO_DATA
+    assert "NO_RULE_WITH_SUFFICIENT_SEPARATION" in state.reasons
