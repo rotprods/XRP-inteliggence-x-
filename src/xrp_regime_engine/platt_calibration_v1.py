@@ -238,16 +238,12 @@ def candidate_evaluation_records(
     by_prediction: dict[str, CalibratedProbabilityCandidate] = {}
     for candidate in candidates:
         if candidate.prediction_id in by_prediction:
-            raise ValueError(
-                f"duplicate candidate for prediction_id: {candidate.prediction_id}"
-            )
+            raise ValueError(f"duplicate candidate for prediction_id: {candidate.prediction_id}")
         by_prediction[candidate.prediction_id] = candidate
     outcome_by_prediction: dict[str, ResolvedOOSOutcome] = {}
     for outcome in outcomes:
         if outcome.prediction_id in outcome_by_prediction:
-            raise ValueError(
-                f"duplicate outcome for prediction_id: {outcome.prediction_id}"
-            )
+            raise ValueError(f"duplicate outcome for prediction_id: {outcome.prediction_id}")
         outcome_by_prediction[outcome.prediction_id] = outcome
     missing = set(by_prediction) - set(outcome_by_prediction)
     orphan = set(outcome_by_prediction) - set(by_prediction)
@@ -271,6 +267,4 @@ def candidate_evaluation_records(
                 resolved_at=outcome.resolved_at,
             )
         )
-    return tuple(
-        sorted(records, key=lambda item: (item.prediction_time, item.prediction_id))
-    )
+    return tuple(sorted(records, key=lambda item: (item.prediction_time, item.prediction_id)))
