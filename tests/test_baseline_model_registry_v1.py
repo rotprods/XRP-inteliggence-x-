@@ -150,6 +150,4 @@ def test_registry_rejects_challenger_without_eligible_skill() -> None:
         development_challenger=rejected_kind,
     )
     with pytest.raises(ValueError, match="not eligible"):
-        build_baseline_model_registry(
-            replace(source, cells=(bad_cell,))
-        )
+        build_baseline_model_registry(replace(source, cells=(bad_cell,)))
