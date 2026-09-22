@@ -25,6 +25,8 @@ class ClaimedKrakenAdapter:
     provider = "kraken"
     dataset = "xrp_spot_1h"
     schema_version = "historical-observation-v2"
+    ingestion_version = "2"
+    parser_version = "2"
 
     def initial_cursor(self, window: BackfillWindowV2) -> dict[str, object]:
         del window
