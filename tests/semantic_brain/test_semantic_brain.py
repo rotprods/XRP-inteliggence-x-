@@ -93,6 +93,45 @@ def test_regime_context_excludes_future_information_and_zero_weights_narrative()
     assert "NON_DIRECTIONAL_RESEARCH_ONLY" in context.evidence[1].quality_flags
 
 
+def test_regime_context_filters_serialized_future_availability() -> None:
+    records = [
+        {
+            "claim_id": "known",
+            "statement": "known before decision",
+            "status": "FACT",
+            "available_at": "2026-09-14T23:59:00Z",
+        },
+        {
+            "claim_id": "future",
+            "statement": "not yet knowable",
+            "status": "FACT",
+            "available_at": "2026-09-15T00:01:00+00:00",
+        },
+    ]
+
+    context = build_regime_context(records, NOW)
+
+    assert [item.claim_id for item in context.evidence] == ["known"]
+
+
+@pytest.mark.parametrize(
+    "available_at",
+    [None, "not-a-datetime", datetime(2026, 9, 14, 23, 59)],
+)
+def test_regime_context_rejects_unknown_or_ambiguous_availability(
+    available_at: object,
+) -> None:
+    record = {
+        "claim_id": "ambiguous",
+        "statement": "availability is not trustworthy",
+        "status": "FACT",
+        "available_at": available_at,
+    }
+
+    with pytest.raises(ValueError, match="available_at"):
+        build_regime_context([record], NOW)
+
+
 def test_prediction_cannot_be_scored_before_horizon() -> None:
     prediction = FrozenPrediction(
         prediction_id="p1",
