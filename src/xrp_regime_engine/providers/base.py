@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import ipaddress
 import json
+import math
 import socket
 import time
 from abc import ABC, abstractmethod
@@ -28,13 +29,99 @@ class RetryableProviderError(ProviderError):
         self.retry_after = retry_after
 
 
+def _reject_duplicate_json_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant is forbidden: {value}")
+
+
+def _decode_json_root(raw_payload: bytes) -> dict[str, Any] | list[Any]:
+    try:
+        payload = json.loads(
+            raw_payload,
+            object_pairs_hook=_reject_duplicate_json_pairs,
+            parse_constant=_reject_nonfinite_json_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError("raw_payload must contain valid duplicate-key-free JSON") from exc
+    if not isinstance(payload, (dict, list)):
+        raise ValueError("raw_payload JSON root must be an object or array")
+    return payload
+
+
+def _is_sensitive_query_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    return any(
+        token in normalized
+        for token in ("api_key", "apikey", "token", "secret", "signature", "password", "credential")
+    )
+
+
+def _request_identity(
+    method: str,
+    target: httpx.URL,
+    *,
+    params: dict[str, Any] | None,
+    json_body: dict[str, Any] | None,
+) -> tuple[str, str | None, str]:
+    query_items = list(target.params.multi_items())
+    if params:
+        query_items.extend(httpx.QueryParams(params).multi_items())
+    sanitized_items = sorted(
+        (
+            key,
+            "<redacted>" if _is_sensitive_query_key(key) else value,
+        )
+        for key, value in query_items
+    )
+    canonical_target = target.copy_with(query=None)
+    if sanitized_items:
+        canonical_target = canonical_target.copy_merge_params(sanitized_items)
+    canonical_uri = str(canonical_target)
+
+    body_sha256: str | None = None
+    if json_body is not None:
+        try:
+            body_material = json.dumps(
+                json_body,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode()
+        except (TypeError, ValueError) as exc:
+            raise ProviderError("request body is not canonical JSON") from exc
+        body_sha256 = hashlib.sha256(body_material).hexdigest()
+
+    request_material = json.dumps(
+        {
+            "method": method,
+            "canonical_uri": canonical_uri,
+            "body_sha256": body_sha256,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode()
+    return canonical_uri, body_sha256, hashlib.sha256(request_material).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class RawJsonEvidence:
     """Exact bounded public-response evidence captured at the transport boundary.
 
-    The parsed and raw payloads are intentionally excluded from ``repr`` so callers do not
-    accidentally copy provider data into logs. This object adds evidence visibility only; it
-    does not add endpoints, credentials, methods, redirects, or any execution authority.
+    Parsed/raw provider payloads and sanitized request identity are excluded from ``repr`` so callers
+    do not accidentally copy provider content or query material into logs. The object is internally
+    self-validating: parsed content must equal the exact raw JSON bytes, and the request fingerprint
+    must match method + sanitized canonical URI + canonical request-body digest.
     """
 
     payload: dict[str, Any] | list[Any] = field(repr=False)
@@ -42,18 +129,56 @@ class RawJsonEvidence:
     latency_ms: float
     payload_sha256: str
     fetched_at: datetime
+    request_method: str
+    canonical_uri: str = field(repr=False)
+    request_body_sha256: str | None = field(default=None, repr=False)
+    request_fingerprint: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
-        if self.latency_ms < 0:
-            raise ValueError("latency_ms cannot be negative")
+        if not math.isfinite(self.latency_ms) or self.latency_ms < 0:
+            raise ValueError("latency_ms must be finite and non-negative")
         if not self.raw_payload:
             raise ValueError("raw_payload cannot be empty")
         expected_digest = hashlib.sha256(self.raw_payload).hexdigest()
         if self.payload_sha256 != expected_digest:
             raise ValueError("payload_sha256 does not match raw_payload")
+        decoded = _decode_json_root(self.raw_payload)
+        if decoded != self.payload:
+            raise ValueError("payload does not match raw_payload JSON")
         if self.fetched_at.tzinfo is None or self.fetched_at.utcoffset() is None:
             raise ValueError("fetched_at must be timezone-aware")
         object.__setattr__(self, "fetched_at", self.fetched_at.astimezone(UTC))
+
+        method = self.request_method.upper().strip()
+        if not method:
+            raise ValueError("request_method is required")
+        object.__setattr__(self, "request_method", method)
+
+        parsed_uri = urlsplit(self.canonical_uri)
+        if parsed_uri.scheme != "https" or not parsed_uri.hostname:
+            raise ValueError("canonical_uri must be an absolute HTTPS URI")
+        if parsed_uri.username or parsed_uri.password or parsed_uri.fragment:
+            raise ValueError("canonical_uri cannot contain credentials or a fragment")
+
+        if self.request_body_sha256 is not None:
+            if len(self.request_body_sha256) != 64 or any(
+                char not in "0123456789abcdef" for char in self.request_body_sha256
+            ):
+                raise ValueError("request_body_sha256 must be a lowercase SHA-256 digest")
+        material = json.dumps(
+            {
+                "method": method,
+                "canonical_uri": self.canonical_uri,
+                "body_sha256": self.request_body_sha256,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode()
+        expected_request_fingerprint = hashlib.sha256(material).hexdigest()
+        if self.request_fingerprint != expected_request_fingerprint:
+            raise ValueError("request_fingerprint does not match request identity")
 
 
 class MarketDataProvider(ABC):
@@ -202,18 +327,24 @@ class MarketDataProvider(ABC):
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> RawJsonEvidence:
-        """Return parsed JSON plus the exact bounded bytes and fetch-time evidence.
+        """Return parsed JSON plus exact bounded response/request provenance evidence.
 
-        This reuses the same hardened transport policy as ``_request_json``. The method is
-        deliberately protected: provider adapters may consume the evidence, while public callers
-        continue using typed provider methods. Query parameters are not copied into errors or the
-        returned evidence object.
+        The response bytes and parsed payload are bound together, and the evidence also binds the
+        response to a sanitized canonical request identity without exposing credential values. The
+        method remains protected: provider adapters may consume the evidence, while public callers
+        continue using typed provider methods.
         """
 
         method = method.upper()
         if method not in self.allowed_methods:
             raise ProviderError(f"HTTP method {method} is not allowed for {self.name}")
         target = self._target_url(path)
+        canonical_uri, request_body_sha256, request_fingerprint = _request_identity(
+            method,
+            target,
+            params=params,
+            json_body=json_body,
+        )
         await self._resolve_public_addresses(target.host)
 
         last_error = "unknown provider failure"
@@ -241,11 +372,9 @@ class MarketDataProvider(ABC):
                     fetched_at = datetime.now(UTC)
 
                 try:
-                    payload = json.loads(raw)
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    payload = _decode_json_root(raw)
+                except ValueError as exc:
                     raise ProviderError(f"malformed JSON from {self.name}") from exc
-                if not isinstance(payload, (dict, list)):
-                    raise ProviderError(f"unexpected JSON root from {self.name}")
                 digest = hashlib.sha256(raw).hexdigest()
                 return RawJsonEvidence(
                     payload=payload,
@@ -253,6 +382,10 @@ class MarketDataProvider(ABC):
                     latency_ms=latency,
                     payload_sha256=digest,
                     fetched_at=fetched_at,
+                    request_method=method,
+                    canonical_uri=canonical_uri,
+                    request_body_sha256=request_body_sha256,
+                    request_fingerprint=request_fingerprint,
                 )
             except RetryableProviderError as exc:
                 last_error = str(exc)
