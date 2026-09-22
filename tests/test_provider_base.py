@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from xrp_regime_engine.models import Candle
-from xrp_regime_engine.providers.base import MarketDataProvider, ProviderError
+from xrp_regime_engine.providers.base import MarketDataProvider, ProviderError, RawJsonEvidence
 
 
 class StubProvider(MarketDataProvider):
@@ -32,6 +32,59 @@ class StubProvider(MarketDataProvider):
 def test_base_url_validation_is_fail_closed(url: str) -> None:
     with pytest.raises(ValueError):
         StubProvider(url)
+
+
+def test_raw_json_evidence_fails_closed_on_digest_time_and_latency_corruption() -> None:
+    raw = b'{"ok":true}'
+    digest = hashlib.sha256(raw).hexdigest()
+
+    with pytest.raises(ValueError, match="payload_sha256"):
+        RawJsonEvidence(
+            payload={"ok": True},
+            raw_payload=raw,
+            latency_ms=1.0,
+            payload_sha256="0" * 64,
+            fetched_at=datetime.now(UTC),
+        )
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        RawJsonEvidence(
+            payload={"ok": True},
+            raw_payload=raw,
+            latency_ms=1.0,
+            payload_sha256=digest,
+            fetched_at=datetime.now(),
+        )
+
+    with pytest.raises(ValueError, match="latency_ms"):
+        RawJsonEvidence(
+            payload={"ok": True},
+            raw_payload=raw,
+            latency_ms=-0.001,
+            payload_sha256=digest,
+            fetched_at=datetime.now(UTC),
+        )
+
+    with pytest.raises(ValueError, match="raw_payload"):
+        RawJsonEvidence(
+            payload={},
+            raw_payload=b"",
+            latency_ms=0.0,
+            payload_sha256=hashlib.sha256(b"").hexdigest(),
+            fetched_at=datetime.now(UTC),
+        )
+
+
+def test_raw_json_evidence_normalizes_fetch_time_to_utc() -> None:
+    raw = b'{"ok":true}'
+    evidence = RawJsonEvidence(
+        payload={"ok": True},
+        raw_payload=raw,
+        latency_ms=0.0,
+        payload_sha256=hashlib.sha256(raw).hexdigest(),
+        fetched_at=datetime.now().astimezone(),
+    )
+    assert evidence.fetched_at.tzinfo is UTC
 
 
 @pytest.mark.asyncio
