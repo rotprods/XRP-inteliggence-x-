@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "source_id": "binance_public_derivatives",
+      "provider": "Binance",
+      "authority": "PRIMARY_OBSERVED",
+      "access": "PUBLIC_MARKET_DATA",
+      "metrics": [
+        "OPEN_INTEREST_USD",
+        "FUNDING_RATE",
+        "BASIS_BPS",
+        "TAKER_BUY_SELL_RATIO",
+        "CEX_BID_DEPTH_USD",
+        "CEX_ASK_DEPTH_USD",
+        "EXECUTED_LONG_LIQUIDATIONS_USD",
+        "EXECUTED_SHORT_LIQUIDATIONS_USD",
+        "OPEN_INTEREST_DELTA_USD",
+        "OPEN_INTEREST_VELOCITY_USD_PER_MIN"
+      ],
+      "notes": "Use only public market-data surfaces; preserve observed_at/available_at/fetched_at and instrument identity."
+    },
+    {
+      "source_id": "coinglass_derivatives_analytics",
+      "provider": "CoinGlass",
+      "authority": "AGGREGATED_OBSERVED",
+      "access": "API_KEY_PLAN_DEPENDENT",
+      "metrics": [
+        "OPEN_INTEREST_USD",
+        "FUNDING_RATE",
+        "TAKER_BUY_SELL_RATIO",
+        "EXECUTED_LONG_LIQUIDATIONS_USD",
+        "EXECUTED_SHORT_LIQUIDATIONS_USD",
+        "LARGE_LIMIT_BID_USD",
+        "LARGE_LIMIT_ASK_USD",
+        "WHALE_LONG_USD",
+        "WHALE_SHORT_USD",
+        "ETF_NET_FLOW_USD"
+      ],
+      "notes": "Aggregated observed analytics remain lower authority than primary venue observations when both exist."
+    },
+    {
+      "source_id": "coinglass_liquidation_heatmap",
+      "provider": "CoinGlass",
+      "authority": "INFERRED_MODEL",
+      "access": "API_KEY_PROFESSIONAL_OR_HIGHER",
+      "metrics": [
+        "LIQUIDATION_CLUSTER_LONGS_BELOW",
+        "LIQUIDATION_CLUSTER_SHORTS_ABOVE"
+      ],
+      "notes": "Heatmap/map levels are calculated estimates from market data and leverage assumptions; never represent them as pending liquidation orders known to the exchange."
+    },
+    {
+      "source_id": "xrpl_amm_info",
+      "provider": "XRPL",
+      "authority": "PRIMARY_OBSERVED",
+      "access": "PUBLIC_JSON_RPC_OR_WEBSOCKET",
+      "metrics": [
+        "XRPL_AMM_XRP_RESERVE",
+        "XRPL_AMM_QUOTE_RESERVE",
+        "XRPL_AMM_SLIPPAGE_10K_BPS"
+      ],
+      "notes": "Use validated-ledger AMM state and preserve ledger identity."
+    },
+    {
+      "source_id": "xrpl_book_offers",
+      "provider": "XRPL",
+      "authority": "PRIMARY_OBSERVED",
+      "access": "PUBLIC_JSON_RPC_OR_WEBSOCKET",
+      "metrics": [
+        "XRPL_DEX_BID_FUNDED",
+        "XRPL_DEX_ASK_FUNDED",
+        "XRPL_DEX_SPREAD_BPS"
+      ],
+      "notes": "Prefer funded offer amounts; issuer identity is part of market identity."
+    },
+    {
+      "source_id": "verified_exchange_flow_labels",
+      "provider": "MULTI_SOURCE",
+      "authority": "AGGREGATED_OBSERVED",
+      "access": "PROVIDER_DEPENDENT",
+      "metrics": [
+        "EXCHANGE_INFLOW_XRP",
+        "EXCHANGE_OUTFLOW_XRP"
+      ],
+      "notes": "Only include verified exchange-address labels with provenance; do not infer exchange ownership from heuristics silently."
+    }
+  ]
+}
