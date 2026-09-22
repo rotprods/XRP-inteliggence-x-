@@ -268,9 +268,7 @@ def test_missing_metrics_are_explicit() -> None:
 
 
 def test_insufficient_observed_provider_coverage_forces_no_data() -> None:
-    context = assess_liquidity_breakout_context(
-        state(second_provider=False)
-    )
+    context = assess_liquidity_breakout_context(state(second_provider=False))
     assert context.posture is LiquidityBreakoutPosture.NO_DATA
     assert "LIQUIDITY_PLANE_NOT_POINT_IN_TIME_ELIGIBLE" in context.contradictions
 

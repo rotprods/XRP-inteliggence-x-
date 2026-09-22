@@ -242,16 +242,10 @@ def test_full_state_separates_observed_and_inferred_evidence() -> None:
     assert state.xrpl_dex_bid_funded == pytest.approx(1_500_000)
     assert state.xrpl_dex_ask_funded == pytest.approx(1_000_000)
     assert state.whale_long_usd == pytest.approx(2_000_000)
-    assert state.nearest_long_liquidation_distance_pct == pytest.approx(
-        (1.56 - 1.52) / 1.56
-    )
-    assert state.nearest_short_liquidation_distance_pct == pytest.approx(
-        (1.58 - 1.56) / 1.56
-    )
+    assert state.nearest_long_liquidation_distance_pct == pytest.approx((1.56 - 1.52) / 1.56)
+    assert state.nearest_short_liquidation_distance_pct == pytest.approx((1.58 - 1.56) / 1.56)
     assert state.inferred_liquidation_bias > 0
-    assert state.cluster_to_observed_depth_ratio == pytest.approx(
-        22_000_000 / 3_000_000
-    )
+    assert state.cluster_to_observed_depth_ratio == pytest.approx(22_000_000 / 3_000_000)
     assert "INFERRED_MODEL_PRESENT" in state.quality_flags
     assert state.decision_authority is False
     assert state.execution_weight == 0.0
@@ -348,9 +342,7 @@ def test_insufficient_observed_provider_coverage_fails_eligibility() -> None:
         symbol="XRPUSDT",
         reference_price=1.56,
         prediction_time=T0,
-        observations=(
-            obs("a", LiquidityMetricKind.CEX_BID_DEPTH_USD, 1_000_000),
-        ),
+        observations=(obs("a", LiquidityMetricKind.CEX_BID_DEPTH_USD, 1_000_000),),
         liquidation_clusters=(),
     )
     assert state.point_in_time_eligible is False
@@ -454,7 +446,6 @@ def test_cluster_validation_fail_closed() -> None:
             notional=1,
             confidence=2,
         )
-
 
 
 def test_negative_non_negative_metric_is_rejected() -> None:

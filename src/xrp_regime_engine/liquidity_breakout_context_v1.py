@@ -100,9 +100,7 @@ def assess_liquidity_breakout_context(
         taker_support: bool | None = None
         missing.append("TAKER_BUY_SELL_RATIO")
     else:
-        taker_support = (
-            state.taker_buy_sell_ratio >= selected.minimum_taker_buy_sell_ratio
-        )
+        taker_support = state.taker_buy_sell_ratio >= selected.minimum_taker_buy_sell_ratio
         if taker_support:
             support.append("TAKER_FLOW_BUY_DOMINANT")
         else:
@@ -114,16 +112,12 @@ def assess_liquidity_breakout_context(
         else None
     )
 
-    if (
-        state.open_interest_delta_usd is None
-        or state.open_interest_velocity_usd_per_min is None
-    ):
+    if state.open_interest_delta_usd is None or state.open_interest_velocity_usd_per_min is None:
         leverage_expansion: bool | None = None
         missing.append("OPEN_INTEREST_DELTA_OR_VELOCITY")
     else:
         leverage_expansion = (
-            state.open_interest_delta_usd > 0
-            and state.open_interest_velocity_usd_per_min > 0
+            state.open_interest_delta_usd > 0 and state.open_interest_velocity_usd_per_min > 0
         )
         if leverage_expansion:
             support.append("OPEN_INTEREST_EXPANDING")
@@ -135,15 +129,9 @@ def assess_liquidity_breakout_context(
         missing.append("FUNDING_AND_BASIS")
     else:
         funding_dangerous = (
-            (
-                state.funding_rate is not None
-                and state.funding_rate > selected.dangerous_positive_funding_rate
-            )
-            or (
-                state.basis_bps is not None
-                and state.basis_bps > selected.dangerous_basis_bps
-            )
-        )
+            state.funding_rate is not None
+            and state.funding_rate > selected.dangerous_positive_funding_rate
+        ) or (state.basis_bps is not None and state.basis_bps > selected.dangerous_basis_bps)
         if funding_dangerous:
             contradictions.append("FUNDING_OR_BASIS_CROWDED")
         else:
@@ -158,8 +146,7 @@ def assess_liquidity_breakout_context(
     else:
         short_fuel = (
             state.inferred_liquidation_bias >= selected.liquidation_bias_threshold
-            and state.nearest_short_liquidation_distance_pct
-            <= selected.nearby_cluster_distance_pct
+            and state.nearest_short_liquidation_distance_pct <= selected.nearby_cluster_distance_pct
         )
         if short_fuel:
             support.append("INFERRED_SHORT_LIQUIDATION_FUEL_NEARBY")
@@ -173,22 +160,17 @@ def assess_liquidity_breakout_context(
     else:
         long_flush = (
             state.inferred_liquidation_bias <= -selected.liquidation_bias_threshold
-            and state.nearest_long_liquidation_distance_pct
-            <= selected.nearby_cluster_distance_pct
+            and state.nearest_long_liquidation_distance_pct <= selected.nearby_cluster_distance_pct
         )
         if long_flush:
             contradictions.append("INFERRED_LONG_LIQUIDATION_FLUSH_RISK_NEARBY")
 
-    if (
-        state.xrpl_amm_slippage_10k_bps is None
-        or state.xrpl_dex_spread_bps is None
-    ):
+    if state.xrpl_amm_slippage_10k_bps is None or state.xrpl_dex_spread_bps is None:
         onchain_healthy: bool | None = None
         missing.append("XRPL_EFFECTIVE_LIQUIDITY")
     else:
         onchain_healthy = (
-            state.xrpl_amm_slippage_10k_bps
-            <= selected.maximum_amm_slippage_10k_bps
+            state.xrpl_amm_slippage_10k_bps <= selected.maximum_amm_slippage_10k_bps
             and state.xrpl_dex_spread_bps <= selected.maximum_dex_spread_bps
         )
         if onchain_healthy:
@@ -199,9 +181,7 @@ def assess_liquidity_breakout_context(
     if not state.point_in_time_eligible:
         posture = LiquidityBreakoutPosture.NO_DATA
         contradictions.append("LIQUIDITY_PLANE_NOT_POINT_IN_TIME_ELIGIBLE")
-    elif long_flush is True or (
-        leverage_expansion is True and funding_dangerous is True
-    ):
+    elif long_flush is True or (leverage_expansion is True and funding_dangerous is True):
         posture = LiquidityBreakoutPosture.FRAGILE
     elif spot_support_confirmed is True and leverage_expansion is True:
         posture = LiquidityBreakoutPosture.LEVERAGE_LED

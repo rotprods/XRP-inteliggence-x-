@@ -154,7 +154,9 @@ class LiquidityObservation:
         available = _utc(self.available_at, "available_at")
         fetched = _utc(self.fetched_at, "fetched_at")
         if not observed <= available <= fetched:
-            raise ValueError("observation timestamps must satisfy observed_at <= available_at <= fetched_at")
+            raise ValueError(
+                "observation timestamps must satisfy observed_at <= available_at <= fetched_at"
+            )
         object.__setattr__(self, "observed_at", observed)
         object.__setattr__(self, "available_at", available)
         object.__setattr__(self, "fetched_at", fetched)
@@ -209,7 +211,9 @@ class LiquidationCluster:
         available = _utc(self.available_at, "available_at")
         fetched = _utc(self.fetched_at, "fetched_at")
         if not observed <= available <= fetched:
-            raise ValueError("cluster timestamps must satisfy observed_at <= available_at <= fetched_at")
+            raise ValueError(
+                "cluster timestamps must satisfy observed_at <= available_at <= fetched_at"
+            )
         object.__setattr__(self, "lower_price", lower)
         object.__setattr__(self, "upper_price", upper)
         object.__setattr__(self, "estimated_notional_usd", notional)
@@ -416,25 +420,14 @@ def build_liquidity_liquidation_state(
         if item.authority is EvidenceAuthority.AGGREGATED_OBSERVED
     ]
     inferred = [
-        item
-        for item in eligible_observations
-        if item.authority is EvidenceAuthority.INFERRED_MODEL
+        item for item in eligible_observations if item.authority is EvidenceAuthority.INFERRED_MODEL
     ]
     observed_providers = tuple(sorted({item.provider for item in (*primary, *aggregated)}))
     primary_market_venues = tuple(
-        sorted(
-            {
-                item.venue
-                for item in primary
-                if item.metric in _PRIMARY_MARKET_METRICS
-            }
-        )
+        sorted({item.venue for item in primary if item.metric in _PRIMARY_MARKET_METRICS})
     )
     inferred_providers = tuple(
-        sorted(
-            {item.provider for item in inferred}
-            | {item.provider for item in eligible_clusters}
-        )
+        sorted({item.provider for item in inferred} | {item.provider for item in eligible_clusters})
     )
 
     cex_bid_depth = _sum_metric(
@@ -446,11 +439,7 @@ def build_liquidity_liquidation_state(
         LiquidityMetricKind.CEX_ASK_DEPTH_USD,
     )
     total_depth = cex_bid_depth + cex_ask_depth
-    depth_imbalance = (
-        (cex_bid_depth - cex_ask_depth) / total_depth
-        if total_depth > 0
-        else None
-    )
+    depth_imbalance = (cex_bid_depth - cex_ask_depth) / total_depth if total_depth > 0 else None
 
     executed_long = _sum_metric(
         eligible_observations,
@@ -462,9 +451,7 @@ def build_liquidity_liquidation_state(
     )
     executed_total = executed_long + executed_short
     executed_imbalance = (
-        (executed_short - executed_long) / executed_total
-        if executed_total > 0
-        else None
+        (executed_short - executed_long) / executed_total if executed_total > 0 else None
     )
 
     bands = []
@@ -519,9 +506,7 @@ def build_liquidity_liquidation_state(
         else None
     )
     cluster_to_depth = (
-        inferred_total / total_depth
-        if inferred_total > 0 and total_depth > 0
-        else None
+        inferred_total / total_depth if inferred_total > 0 and total_depth > 0 else None
     )
 
     open_interest_center = _center_metric(
@@ -595,10 +580,7 @@ def build_liquidity_liquidation_state(
 
     if len(observed_providers) < selected_policy.minimum_observed_provider_count:
         quality_flags.append("OBSERVED_PROVIDER_COVERAGE_INSUFFICIENT")
-    if (
-        len(primary_market_venues)
-        < selected_policy.minimum_primary_market_venue_count
-    ):
+    if len(primary_market_venues) < selected_policy.minimum_primary_market_venue_count:
         quality_flags.append("PRIMARY_MARKET_VENUE_COVERAGE_INSUFFICIENT")
     if not eligible_clusters:
         quality_flags.append("LIQUIDATION_CLUSTER_NO_DATA")
@@ -613,8 +595,7 @@ def build_liquidity_liquidation_state(
 
     point_in_time_eligible = (
         len(observed_providers) >= selected_policy.minimum_observed_provider_count
-        and len(primary_market_venues)
-        >= selected_policy.minimum_primary_market_venue_count
+        and len(primary_market_venues) >= selected_policy.minimum_primary_market_venue_count
         and bool(primary)
     )
 
