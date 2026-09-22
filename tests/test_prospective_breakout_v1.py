@@ -139,3 +139,33 @@ def test_frame_validation_fail_closed() -> None:
 def test_experiment_id_required() -> None:
     with pytest.raises(ValueError, match="experiment_id"):
         evaluate_breakout_frame(frame(), experiment_id=" ")
+
+
+def test_frozen_20260922_user_snapshot_is_not_retroactively_confirmed() -> None:
+    frozen = BreakoutEvidenceFrame(
+        observed_at=T0,
+        pair="XRP/USDT",
+        reference_price=1.56031,
+        breakout_level=1.60,
+        target_barrier=2.0,
+        independent_price_consensus_valid=None,
+        breakout_level_accepted=False,
+        spot_flow_confirmed=None,
+        relative_strength_confirmed=None,
+        leverage_expansion=None,
+        funding_dangerous=None,
+        failed_breakout=False,
+        screenshot_sha256=(SHOT1, SHOT2),
+        source_note="user-supplied KuCoin screenshots frozen prospectively",
+    )
+    assessment = evaluate_breakout_frame(
+        frozen,
+        experiment_id="H-XRP-BREAKOUT-150-20260922",
+    )
+    assert assessment.state is LiveBreakoutState.NO_DATA
+    assert assessment.shadow_long_candidate is False
+    assert assessment.research_signal_ready is False
+    assert "INDEPENDENT_PRICE_CONSENSUS_MISSING" in assessment.contradictions
+    assert assessment.reference_price == pytest.approx(1.56031)
+    assert assessment.breakout_level == pytest.approx(1.60)
+    assert assessment.target_barrier == pytest.approx(2.0)
