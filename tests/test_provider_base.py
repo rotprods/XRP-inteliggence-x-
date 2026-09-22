@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 
 import httpx
@@ -19,6 +20,56 @@ class StubProvider(MarketDataProvider):
         return []
 
 
+def _request_fingerprint(
+    *,
+    method: str = "GET",
+    canonical_uri: str = "https://api.test.invalid/history",
+    body_sha256: str | None = None,
+) -> str:
+    material = json.dumps(
+        {
+            "method": method,
+            "canonical_uri": canonical_uri,
+            "body_sha256": body_sha256,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode()
+    return hashlib.sha256(material).hexdigest()
+
+
+def _evidence(
+    *,
+    payload: dict[str, object] | list[object] | None = None,
+    raw: bytes = b'{"ok":true}',
+    latency_ms: float = 1.0,
+    fetched_at: datetime | None = None,
+    request_method: str = "GET",
+    canonical_uri: str = "https://api.test.invalid/history",
+    request_body_sha256: str | None = None,
+    request_fingerprint: str | None = None,
+) -> RawJsonEvidence:
+    actual_payload: dict[str, object] | list[object] = {"ok": True} if payload is None else payload
+    fingerprint = request_fingerprint or _request_fingerprint(
+        method=request_method,
+        canonical_uri=canonical_uri,
+        body_sha256=request_body_sha256,
+    )
+    return RawJsonEvidence(
+        payload=actual_payload,
+        raw_payload=raw,
+        latency_ms=latency_ms,
+        payload_sha256=hashlib.sha256(raw).hexdigest(),
+        fetched_at=fetched_at or datetime.now(UTC),
+        request_method=request_method,
+        canonical_uri=canonical_uri,
+        request_body_sha256=request_body_sha256,
+        request_fingerprint=fingerprint,
+    )
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -34,9 +85,10 @@ def test_base_url_validation_is_fail_closed(url: str) -> None:
         StubProvider(url)
 
 
-def test_raw_json_evidence_fails_closed_on_digest_time_and_latency_corruption() -> None:
+def test_raw_json_evidence_fails_closed_on_digest_time_latency_and_request_corruption() -> None:
     raw = b'{"ok":true}'
     digest = hashlib.sha256(raw).hexdigest()
+    fingerprint = _request_fingerprint()
 
     with pytest.raises(ValueError, match="payload_sha256"):
         RawJsonEvidence(
@@ -45,6 +97,9 @@ def test_raw_json_evidence_fails_closed_on_digest_time_and_latency_corruption() 
             latency_ms=1.0,
             payload_sha256="0" * 64,
             fetched_at=datetime.now(UTC),
+            request_method="GET",
+            canonical_uri="https://api.test.invalid/history",
+            request_fingerprint=fingerprint,
         )
 
     with pytest.raises(ValueError, match="timezone-aware"):
@@ -54,16 +109,23 @@ def test_raw_json_evidence_fails_closed_on_digest_time_and_latency_corruption() 
             latency_ms=1.0,
             payload_sha256=digest,
             fetched_at=datetime.now(),
+            request_method="GET",
+            canonical_uri="https://api.test.invalid/history",
+            request_fingerprint=fingerprint,
         )
 
-    with pytest.raises(ValueError, match="latency_ms"):
-        RawJsonEvidence(
-            payload={"ok": True},
-            raw_payload=raw,
-            latency_ms=-0.001,
-            payload_sha256=digest,
-            fetched_at=datetime.now(UTC),
-        )
+    for bad_latency in (-0.001, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="latency_ms"):
+            RawJsonEvidence(
+                payload={"ok": True},
+                raw_payload=raw,
+                latency_ms=bad_latency,
+                payload_sha256=digest,
+                fetched_at=datetime.now(UTC),
+                request_method="GET",
+                canonical_uri="https://api.test.invalid/history",
+                request_fingerprint=fingerprint,
+            )
 
     with pytest.raises(ValueError, match="raw_payload"):
         RawJsonEvidence(
@@ -72,18 +134,43 @@ def test_raw_json_evidence_fails_closed_on_digest_time_and_latency_corruption() 
             latency_ms=0.0,
             payload_sha256=hashlib.sha256(b"").hexdigest(),
             fetched_at=datetime.now(UTC),
+            request_method="GET",
+            canonical_uri="https://api.test.invalid/history",
+            request_fingerprint=fingerprint,
+        )
+
+    with pytest.raises(ValueError, match="request_fingerprint"):
+        RawJsonEvidence(
+            payload={"ok": True},
+            raw_payload=raw,
+            latency_ms=1.0,
+            payload_sha256=digest,
+            fetched_at=datetime.now(UTC),
+            request_method="GET",
+            canonical_uri="https://api.test.invalid/history",
+            request_fingerprint="0" * 64,
         )
 
 
+def test_raw_json_evidence_binds_parsed_payload_to_exact_raw_json() -> None:
+    with pytest.raises(ValueError, match="payload does not match"):
+        _evidence(payload={"ok": False})
+
+    duplicate_key_raw = b'{"ok":true,"ok":false}'
+    with pytest.raises(ValueError, match="duplicate-key-free JSON"):
+        _evidence(payload={"ok": False}, raw=duplicate_key_raw)
+
+    scalar_raw = b"7"
+    with pytest.raises(ValueError, match="object or array"):
+        _evidence(payload=[], raw=scalar_raw)
+
+    nonfinite_raw = b'{"value":NaN}'
+    with pytest.raises(ValueError, match="duplicate-key-free JSON"):
+        _evidence(payload={"value": 0}, raw=nonfinite_raw)
+
+
 def test_raw_json_evidence_normalizes_fetch_time_to_utc() -> None:
-    raw = b'{"ok":true}'
-    evidence = RawJsonEvidence(
-        payload={"ok": True},
-        raw_payload=raw,
-        latency_ms=0.0,
-        payload_sha256=hashlib.sha256(raw).hexdigest(),
-        fetched_at=datetime.now().astimezone(),
-    )
+    evidence = _evidence(fetched_at=datetime.now().astimezone(), latency_ms=0.0)
     assert evidence.fetched_at.tzinfo is UTC
 
 
@@ -106,7 +193,7 @@ async def test_request_hashes_raw_payload_and_reuses_safe_transport() -> None:
 
 
 @pytest.mark.asyncio
-async def test_request_evidence_preserves_exact_raw_bytes_and_fetch_time_without_repr_leak() -> None:
+async def test_request_evidence_preserves_exact_raw_bytes_fetch_time_and_request_identity() -> None:
     raw = b'{"ok":true,"sequence":7}'
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -131,9 +218,85 @@ async def test_request_evidence_preserves_exact_raw_bytes_and_fetch_time_without
     assert evidence.payload_sha256 == hashlib.sha256(raw).hexdigest()
     assert evidence.latency_ms >= 0
     assert before <= evidence.fetched_at <= after
+    assert evidence.request_method == "GET"
+    assert evidence.canonical_uri == "https://api.test.invalid/history?symbol=XRPUSD"
+    assert evidence.request_body_sha256 is None
+    assert evidence.request_fingerprint == _request_fingerprint(
+        canonical_uri="https://api.test.invalid/history?symbol=XRPUSD"
+    )
     rendered = repr(evidence)
     assert '"ok"' not in rendered
     assert "XRPUSD" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_request_identity_is_stable_redacted_and_semantics_sensitive() -> None:
+    raw = b'{"ok":true}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+
+    provider = StubProvider("https://api.test.invalid", transport=httpx.MockTransport(handler))
+    try:
+        first = await provider._request_json_evidence(
+            "GET",
+            "/history",
+            params={"symbol": "XRPUSD", "limit": 5, "api_key": "SUPER_SECRET"},
+        )
+        reordered = await provider._request_json_evidence(
+            "GET",
+            "/history",
+            params={"api_key": "DIFFERENT_SECRET", "limit": 5, "symbol": "XRPUSD"},
+        )
+        changed = await provider._request_json_evidence(
+            "GET",
+            "/history",
+            params={"symbol": "BTCUSD", "limit": 5, "api_key": "SUPER_SECRET"},
+        )
+    finally:
+        await provider.aclose()
+
+    assert first.canonical_uri == reordered.canonical_uri
+    assert first.request_fingerprint == reordered.request_fingerprint
+    assert "SUPER_SECRET" not in first.canonical_uri
+    assert "DIFFERENT_SECRET" not in reordered.canonical_uri
+    assert "%3Credacted%3E" in first.canonical_uri
+    assert changed.request_fingerprint != first.request_fingerprint
+
+
+@pytest.mark.asyncio
+async def test_post_request_identity_binds_canonical_json_body_without_exposing_body() -> None:
+    raw = b'{"result":"ok"}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+
+    provider = StubProvider("https://api.test.invalid", transport=httpx.MockTransport(handler))
+    body = {"method": "ledger", "params": [{"ledger_index": "validated"}]}
+    expected_body_hash = hashlib.sha256(
+        json.dumps(
+            body,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    try:
+        evidence = await provider._request_json_evidence("POST", "/", json_body=body)
+    finally:
+        await provider.aclose()
+
+    assert evidence.request_method == "POST"
+    assert evidence.request_body_sha256 == expected_body_hash
+    assert evidence.request_fingerprint == _request_fingerprint(
+        method="POST",
+        canonical_uri="https://api.test.invalid/",
+        body_sha256=expected_body_hash,
+    )
+    rendered = repr(evidence)
+    assert "ledger_index" not in rendered
+    assert "validated" not in rendered
 
 
 @pytest.mark.asyncio
