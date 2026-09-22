@@ -67,6 +67,8 @@ class TwoPageAdapter:
     provider = "coinbase"
     dataset = "xrp_spot_1h"
     schema_version = "historical-observation-v2"
+    ingestion_version = "2"
+    parser_version = "2"
 
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
