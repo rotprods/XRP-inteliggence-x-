@@ -51,3 +51,9 @@ Provider agreement, freshness and coverage cannot add bullish or bearish weight.
 ## ADR-013 — USD and stablecoin quote markets are distinct
 
 `XRP_USD` and `XRP_USDT` are separate canonical symbols. A USDT venue cannot silently populate a USD series. Cross-quote normalization requires an explicit, versioned stablecoin basis policy.
+
+## ADR-014 — Backfill jobs are generation-homogeneous
+
+A historical backfill job may not silently span multiple ingestion or parser generations. The durable job identity and resume gate must bind the adapter's `ingestion_version` and `parser_version` together with provider, dataset, schema version and requested window. A resume attempt whose generation differs from the generation already bound to the job must fail closed before any fetch, receipt, partition, checkpoint or manifest mutation.
+
+Schema version is not a substitute for parser or ingestion generation. If a parser/ingestion behavior change is intentionally compatible with the same output schema, it still starts a distinct backfill job identity. Heterogeneous historical evidence may be combined only later through an explicit DatasetVersion/manifest policy that inventories the contributing generations and preserves their receipt provenance; the runner itself must not create a mixed-generation job implicitly.
