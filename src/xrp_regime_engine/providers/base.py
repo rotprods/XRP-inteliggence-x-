@@ -7,6 +7,7 @@ import json
 import socket
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, ClassVar
@@ -25,6 +26,22 @@ class RetryableProviderError(ProviderError):
     def __init__(self, message: str, *, retry_after: float | None = None) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+
+
+@dataclass(frozen=True, slots=True)
+class RawJsonEvidence:
+    """Exact bounded public-response evidence captured at the transport boundary.
+
+    The parsed and raw payloads are intentionally excluded from ``repr`` so callers do not
+    accidentally copy provider data into logs. This object adds evidence visibility only; it
+    does not add endpoints, credentials, methods, redirects, or any execution authority.
+    """
+
+    payload: dict[str, Any] | list[Any] = field(repr=False)
+    raw_payload: bytes = field(repr=False)
+    latency_ms: float
+    payload_sha256: str
+    fetched_at: datetime
 
 
 class MarketDataProvider(ABC):
@@ -165,14 +182,22 @@ class MarketDataProvider(ABC):
                 raise ProviderError(f"oversized response from {self.name}")
         return bytes(body)
 
-    async def _request_json(
+    async def _request_json_evidence(
         self,
         method: str,
         path: str,
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
-    ) -> tuple[Any, float, str]:
+    ) -> RawJsonEvidence:
+        """Return parsed JSON plus the exact bounded bytes and fetch-time evidence.
+
+        This reuses the same hardened transport policy as ``_request_json``. The method is
+        deliberately protected: provider adapters may consume the evidence, while public callers
+        continue using typed provider methods. Query parameters are not copied into errors or the
+        returned evidence object.
+        """
+
         method = method.upper()
         if method not in self.allowed_methods:
             raise ProviderError(f"HTTP method {method} is not allowed for {self.name}")
@@ -201,6 +226,7 @@ class MarketDataProvider(ABC):
                     if "json" not in content_type:
                         raise ProviderError(f"unexpected content type from {self.name}")
                     raw = await self._read_bounded_body(response)
+                    fetched_at = datetime.now(UTC)
 
                 try:
                     payload = json.loads(raw)
@@ -209,7 +235,13 @@ class MarketDataProvider(ABC):
                 if not isinstance(payload, (dict, list)):
                     raise ProviderError(f"unexpected JSON root from {self.name}")
                 digest = hashlib.sha256(raw).hexdigest()
-                return payload, latency, digest
+                return RawJsonEvidence(
+                    payload=payload,
+                    raw_payload=raw,
+                    latency_ms=latency,
+                    payload_sha256=digest,
+                    fetched_at=fetched_at,
+                )
             except RetryableProviderError as exc:
                 last_error = str(exc)
                 if attempt < self.max_attempts:
@@ -230,6 +262,22 @@ class MarketDataProvider(ABC):
                     await asyncio.sleep(self.retry_base_seconds * (2 ** (attempt - 1)))
 
         raise ProviderError(f"{self.name} request failed: {last_error}")
+
+    async def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+    ) -> tuple[Any, float, str]:
+        evidence = await self._request_json_evidence(
+            method,
+            path,
+            params=params,
+            json_body=json_body,
+        )
+        return evidence.payload, evidence.latency_ms, evidence.payload_sha256
 
     @abstractmethod
     async def fetch_candles(self, asset: str, interval: str, limit: int = 300) -> list[Candle]:
