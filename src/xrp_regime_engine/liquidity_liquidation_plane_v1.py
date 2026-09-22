@@ -460,8 +460,7 @@ def build_liquidity_liquidation_state(
             quality_flags.append(f"AUTHORITY_FALLBACK:{metric.value}:{authority.value}")
 
     primary_market_authority_fallback = any(
-        metric in _PRIMARY_MARKET_METRICS
-        and authority is not EvidenceAuthority.PRIMARY_OBSERVED
+        metric in _PRIMARY_MARKET_METRICS and authority is not EvidenceAuthority.PRIMARY_OBSERVED
         for metric, authority in metric_authorities.items()
     )
     if primary_market_authority_fallback:

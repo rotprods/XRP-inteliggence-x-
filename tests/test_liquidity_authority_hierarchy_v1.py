@@ -40,9 +40,7 @@ def observation(
         source_id=f"source:{ident}",
         payload_sha256=PAYLOAD,
         confidence=0.95,
-        model_id="adversarial-model-v1"
-        if authority is EvidenceAuthority.INFERRED_MODEL
-        else None,
+        model_id="adversarial-model-v1" if authority is EvidenceAuthority.INFERRED_MODEL else None,
     )
 
 
