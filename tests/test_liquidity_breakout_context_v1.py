@@ -267,6 +267,20 @@ def test_missing_metrics_are_explicit() -> None:
     assert "XRPL_EFFECTIVE_LIQUIDITY" in context.missing
 
 
+def test_missing_funding_and_basis_cannot_promote_spot_support() -> None:
+    context = assess_liquidity_breakout_context(
+        state(
+            funding=None,
+            basis=None,
+        )
+    )
+    assert context.spot_support_confirmed is True
+    assert context.leverage_expansion is False
+    assert context.funding_dangerous is None
+    assert context.posture is LiquidityBreakoutPosture.NEUTRAL
+    assert "FUNDING_AND_BASIS" in context.missing
+
+
 def test_insufficient_observed_provider_coverage_forces_no_data() -> None:
     context = assess_liquidity_breakout_context(state(second_provider=False))
     assert context.posture is LiquidityBreakoutPosture.NO_DATA
@@ -294,7 +308,7 @@ def test_policy_validation_fail_closed() -> None:
         LiquidityBreakoutPolicy(minimum_taker_buy_sell_ratio=0)
     with pytest.raises(ValueError, match="cannot be negative"):
         LiquidityBreakoutPolicy(dangerous_basis_bps=-1)
-    with pytest.raises(ValueError, match="within \[0, 1\]"):
+    with pytest.raises(ValueError, match="within \\[0, 1\\]"):
         LiquidityBreakoutPolicy(liquidation_bias_threshold=2)
     with pytest.raises(ValueError, match="nearby_cluster_distance_pct"):
         LiquidityBreakoutPolicy(nearby_cluster_distance_pct=0)
