@@ -24,6 +24,24 @@ class RegimeSemanticContext:
     narrative_execution_weight: float = 0.0
 
 
+def _required_available_at(raw: dict[str, Any]) -> datetime:
+    value = raw.get("available_at")
+    if isinstance(value, datetime):
+        available_at = value
+    elif isinstance(value, str):
+        normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+        try:
+            available_at = datetime.fromisoformat(normalized)
+        except ValueError as exc:
+            raise ValueError("available_at must be a valid ISO-8601 datetime") from exc
+    else:
+        raise ValueError("available_at is required for semantic regime evidence")
+
+    if available_at.tzinfo is None or available_at.utcoffset() is None:
+        raise ValueError("available_at must be timezone-aware")
+    return available_at
+
+
 def build_regime_context(
     records: list[dict[str, Any]], decision_at: datetime
 ) -> RegimeSemanticContext:
@@ -31,8 +49,8 @@ def build_regime_context(
         decision_at = decision_at.replace(tzinfo=UTC)
     evidence: list[SemanticEvidence] = []
     for raw in records:
-        available_at = raw.get("available_at")
-        if isinstance(available_at, datetime) and available_at > decision_at:
+        available_at = _required_available_at(raw)
+        if available_at > decision_at:
             continue
         status = EpistemicStatus(raw.get("status", EpistemicStatus.NO_DATA))
         flags = set(raw.get("quality_flags", []))
