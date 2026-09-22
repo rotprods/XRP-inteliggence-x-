@@ -56,6 +56,26 @@ def test_raw_json_evidence_fails_closed_on_digest_time_and_latency_corruption() 
             fetched_at=datetime.now(UTC),
         )
 
+    malformed_raw = b"not-json"
+    with pytest.raises(ValueError, match="valid JSON"):
+        RawJsonEvidence(
+            payload={},
+            raw_payload=malformed_raw,
+            latency_ms=1.0,
+            payload_sha256=hashlib.sha256(malformed_raw).hexdigest(),
+            fetched_at=datetime.now(UTC),
+        )
+
+    scalar_raw = b"42"
+    with pytest.raises(ValueError, match="object or array"):
+        RawJsonEvidence(
+            payload={},
+            raw_payload=scalar_raw,
+            latency_ms=1.0,
+            payload_sha256=hashlib.sha256(scalar_raw).hexdigest(),
+            fetched_at=datetime.now(UTC),
+        )
+
     with pytest.raises(ValueError, match="timezone-aware"):
         RawJsonEvidence(
             payload={"ok": True},
