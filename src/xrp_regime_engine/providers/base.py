@@ -51,6 +51,14 @@ class RawJsonEvidence:
         expected_digest = hashlib.sha256(self.raw_payload).hexdigest()
         if self.payload_sha256 != expected_digest:
             raise ValueError("payload_sha256 does not match raw_payload")
+        try:
+            parsed_payload = json.loads(self.raw_payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("raw_payload must contain valid JSON") from exc
+        if not isinstance(parsed_payload, (dict, list)):
+            raise ValueError("raw_payload JSON root must be object or array")
+        if parsed_payload != self.payload:
+            raise ValueError("payload does not match raw_payload")
         if self.fetched_at.tzinfo is None or self.fetched_at.utcoffset() is None:
             raise ValueError("fetched_at must be timezone-aware")
         object.__setattr__(self, "fetched_at", self.fetched_at.astimezone(UTC))
