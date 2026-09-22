@@ -74,6 +74,23 @@ def test_direct_constructor_rejects_valid_but_stale_fetch_id() -> None:
         )
 
 
+def test_direct_constructor_rejects_non_content_addressed_fetch_id() -> None:
+    original = receipt()
+    with pytest.raises(ValueError, match="fetch_id must use"):
+        FetchReceipt(
+            fetch_id="not-content-addressed",
+            source_id=original.source_id,
+            provider=original.provider,
+            canonical_uri=original.canonical_uri,
+            endpoint=original.endpoint,
+            request_fingerprint=original.request_fingerprint,
+            fetched_at=original.fetched_at,
+            payload_sha256=original.payload_sha256,
+            ingestion_version=original.ingestion_version,
+            parser_version=original.parser_version,
+        )
+
+
 def test_stale_direct_constructor_fails_before_first_store_insert(tmp_path) -> None:
     store = HistoricalEvidenceStoreV2(tmp_path)
     original = receipt()
