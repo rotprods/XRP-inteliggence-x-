@@ -22,7 +22,8 @@ from xrp_regime_engine.historical_contract import (
 
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.=-]+$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-STORE_SCHEMA_VERSION = 1
+STORE_SCHEMA_VERSION = 2
+_SUPPORTED_STORE_SCHEMA_VERSIONS = {1, STORE_SCHEMA_VERSION}
 
 
 def _canonical_bytes(payload: object) -> bytes:
@@ -51,6 +52,13 @@ def _sha256(value: str, field: str) -> str:
     if not _SHA256_RE.fullmatch(value):
         raise ValueError(f"{field} must be a lowercase SHA-256 digest")
     return value
+
+
+def _job_key(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("job_key is required")
+    return normalized
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
@@ -194,6 +202,7 @@ class DurableManifest:
     partition_ids: tuple[str, ...]
     total_rows: int
     relative_path: str
+    job_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,7 +218,7 @@ class HistoricalEvidenceStoreV2:
 
     Files are written before the SQLite registry/checkpoint is advanced. A crash may
     leave an unreferenced immutable file, but it cannot advance a checkpoint past a
-    missing partition.
+    missing partition or job-membership record.
     """
 
     def __init__(
@@ -250,13 +259,30 @@ class HistoricalEvidenceStoreV2:
 
     def _initialize(self) -> None:
         with self._connection() as connection:
-            connection.executescript(
+            connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS store_metadata (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
-                );
+                )
+                """
+            )
+            metadata = connection.execute(
+                "SELECT value FROM store_metadata WHERE key='schema_version'"
+            ).fetchone()
+            previous_version: int | None = None
+            if metadata is not None:
+                try:
+                    previous_version = int(str(metadata["value"]))
+                except ValueError as error:
+                    raise RuntimeError("historical store schema_version is invalid") from error
+                if previous_version not in _SUPPORTED_STORE_SCHEMA_VERSIONS:
+                    raise RuntimeError(
+                        f"unsupported historical store schema_version {previous_version}"
+                    )
 
+            connection.executescript(
+                """
                 CREATE TABLE IF NOT EXISTS raw_blobs (
                     payload_sha256 TEXT PRIMARY KEY,
                     byte_count INTEGER NOT NULL CHECK(byte_count > 0),
@@ -318,6 +344,15 @@ class HistoricalEvidenceStoreV2:
                     FOREIGN KEY(observation_id) REFERENCES observations(observation_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS job_partitions (
+                    job_key TEXT NOT NULL,
+                    partition_id TEXT NOT NULL,
+                    PRIMARY KEY(job_key, partition_id),
+                    FOREIGN KEY(partition_id) REFERENCES partitions(partition_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_job_partitions_job
+                    ON job_partitions(job_key, partition_id);
+
                 CREATE TABLE IF NOT EXISTS manifests (
                     manifest_id TEXT PRIMARY KEY,
                     dataset TEXT NOT NULL,
@@ -337,13 +372,34 @@ class HistoricalEvidenceStoreV2:
                 );
                 """
             )
-            connection.execute(
-                """
-                INSERT INTO store_metadata(key, value) VALUES ('schema_version', ?)
-                ON CONFLICT(key) DO UPDATE SET value=excluded.value
-                """,
-                (str(STORE_SCHEMA_VERSION),),
-            )
+            if previous_version is None:
+                connection.execute(
+                    "INSERT INTO store_metadata(key, value) VALUES ('schema_version', ?)",
+                    (str(STORE_SCHEMA_VERSION),),
+                )
+            elif previous_version == 1:
+                # V1 -> V2 is intentionally additive. Existing partitions remain valid,
+                # but no job membership is synthesized. A completed V1 checkpoint therefore
+                # fails closed on scientific resume until its job is rebuilt explicitly.
+                connection.execute(
+                    "UPDATE store_metadata SET value=? WHERE key='schema_version'",
+                    (str(STORE_SCHEMA_VERSION),),
+                )
+
+    @staticmethod
+    def _partition_from_row(row: sqlite3.Row) -> DurablePartition:
+        return DurablePartition(
+            partition_id=str(row["partition_id"]),
+            dataset=str(row["dataset"]),
+            partition_key=str(row["partition_key"]),
+            relative_path=str(row["relative_path"]),
+            file_sha256=str(row["file_sha256"]),
+            row_count=int(row["row_count"]),
+            minimum_observed_at=datetime.fromisoformat(str(row["minimum_observed_at"])),
+            maximum_observed_at=datetime.fromisoformat(str(row["maximum_observed_at"])),
+            minimum_fetched_at=datetime.fromisoformat(str(row["minimum_fetched_at"])),
+            maximum_fetched_at=datetime.fromisoformat(str(row["maximum_fetched_at"])),
+        )
 
     def _blob_path(self, payload_sha256: str) -> Path:
         digest = _sha256(payload_sha256, "payload_sha256")
@@ -616,21 +672,7 @@ class HistoricalEvidenceStoreV2:
                 """,
                 (dataset,),
             ).fetchall()
-        return tuple(
-            DurablePartition(
-                partition_id=str(row["partition_id"]),
-                dataset=str(row["dataset"]),
-                partition_key=str(row["partition_key"]),
-                relative_path=str(row["relative_path"]),
-                file_sha256=str(row["file_sha256"]),
-                row_count=int(row["row_count"]),
-                minimum_observed_at=datetime.fromisoformat(str(row["minimum_observed_at"])),
-                maximum_observed_at=datetime.fromisoformat(str(row["maximum_observed_at"])),
-                minimum_fetched_at=datetime.fromisoformat(str(row["minimum_fetched_at"])),
-                maximum_fetched_at=datetime.fromisoformat(str(row["maximum_fetched_at"])),
-            )
-            for row in rows
-        )
+        return tuple(self._partition_from_row(row) for row in rows)
 
     def verify_partition(self, partition: DurablePartition) -> None:
         path = self.root / partition.relative_path
@@ -641,28 +683,100 @@ class HistoricalEvidenceStoreV2:
         if len(rows) != partition.row_count:
             raise RuntimeError("partition row count verification failed")
 
-    def finalize_manifest(
+    def register_job_partition(self, *, job_key: str, partition: DurablePartition) -> None:
+        key = _job_key(job_key)
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM partitions WHERE partition_id=?",
+                (partition.partition_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("job partition is not registered")
+            registered = self._partition_from_row(row)
+            if registered != partition:
+                raise RuntimeError("job partition metadata does not match registry")
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO job_partitions(job_key, partition_id)
+                VALUES (?, ?)
+                """,
+                (key, partition.partition_id),
+            )
+
+    def list_job_partitions(
+        self,
+        *,
+        job_key: str,
+        dataset: str,
+    ) -> tuple[DurablePartition, ...]:
+        key = _job_key(job_key)
+        dataset = _safe_segment(dataset, "dataset")
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    jp.partition_id AS member_partition_id,
+                    p.partition_id,
+                    p.dataset,
+                    p.partition_key,
+                    p.relative_path,
+                    p.file_sha256,
+                    p.row_count,
+                    p.minimum_observed_at,
+                    p.maximum_observed_at,
+                    p.minimum_fetched_at,
+                    p.maximum_fetched_at
+                FROM job_partitions AS jp
+                LEFT JOIN partitions AS p ON p.partition_id=jp.partition_id
+                WHERE jp.job_key=?
+                ORDER BY p.partition_key ASC, jp.partition_id ASC
+                """,
+                (key,),
+            ).fetchall()
+        if not rows:
+            raise ValueError("job manifest requires at least one durable partition")
+        partitions: list[DurablePartition] = []
+        for row in rows:
+            if row["partition_id"] is None:
+                raise RuntimeError("job partition membership references missing partition")
+            partition = self._partition_from_row(row)
+            if partition.dataset != dataset:
+                raise RuntimeError("job partition belongs to another dataset")
+            self.verify_partition(partition)
+            partitions.append(partition)
+        return tuple(partitions)
+
+    def _finalize_manifest_from_partitions(
         self,
         *,
         dataset: str,
         schema_version: str,
         created_at: datetime,
+        partitions: Sequence[DurablePartition],
+        job_key: str | None,
     ) -> DurableManifest:
         dataset = _safe_segment(dataset, "dataset")
         schema_version = _safe_segment(schema_version, "schema_version")
         created = _utc(created_at, "created_at")
-        partitions = self.list_partitions(dataset)
         if not partitions:
             raise ValueError("manifest requires at least one durable partition")
-        for partition in partitions:
+        ordered = tuple(sorted(partitions, key=lambda item: (item.partition_key, item.partition_id)))
+        for partition in ordered:
+            if partition.dataset != dataset:
+                raise RuntimeError("manifest contains partition from another dataset")
             self.verify_partition(partition)
-        manifest_payload = {
+        total_rows = sum(partition.row_count for partition in ordered)
+        manifest_payload: dict[str, object] = {
             "dataset": dataset,
             "schema_version": schema_version,
             "created_at": created.isoformat(),
-            "partitions": [partition.to_dict() for partition in partitions],
-            "total_rows": sum(partition.row_count for partition in partitions),
+            "partitions": [partition.to_dict() for partition in ordered],
+            "total_rows": total_rows,
         }
+        normalized_job_key: str | None = None
+        if job_key is not None:
+            normalized_job_key = _job_key(job_key)
+            manifest_payload["job_key"] = normalized_job_key
         payload = _canonical_bytes(manifest_payload) + b"\n"
         digest = sha256(payload).hexdigest()
         manifest_id = f"manifest:sha256:{digest}"
@@ -697,7 +811,7 @@ class HistoricalEvidenceStoreV2:
                         schema_version,
                         created.isoformat(),
                         digest,
-                        manifest_payload["total_rows"],
+                        total_rows,
                         str(relative),
                         payload_json,
                     ),
@@ -708,9 +822,46 @@ class HistoricalEvidenceStoreV2:
             dataset=dataset,
             schema_version=schema_version,
             created_at=created,
-            partition_ids=tuple(partition.partition_id for partition in partitions),
-            total_rows=cast(int, manifest_payload["total_rows"]),
+            partition_ids=tuple(partition.partition_id for partition in ordered),
+            total_rows=total_rows,
             relative_path=str(relative),
+            job_key=normalized_job_key,
+        )
+
+    def finalize_manifest(
+        self,
+        *,
+        dataset: str,
+        schema_version: str,
+        created_at: datetime,
+    ) -> DurableManifest:
+        dataset = _safe_segment(dataset, "dataset")
+        partitions = self.list_partitions(dataset)
+        return self._finalize_manifest_from_partitions(
+            dataset=dataset,
+            schema_version=schema_version,
+            created_at=created_at,
+            partitions=partitions,
+            job_key=None,
+        )
+
+    def finalize_job_manifest(
+        self,
+        *,
+        job_key: str,
+        dataset: str,
+        schema_version: str,
+        created_at: datetime,
+    ) -> DurableManifest:
+        key = _job_key(job_key)
+        dataset = _safe_segment(dataset, "dataset")
+        partitions = self.list_job_partitions(job_key=key, dataset=dataset)
+        return self._finalize_manifest_from_partitions(
+            dataset=dataset,
+            schema_version=schema_version,
+            created_at=created_at,
+            partitions=partitions,
+            job_key=key,
         )
 
     def save_checkpoint(
@@ -721,14 +872,13 @@ class HistoricalEvidenceStoreV2:
         completed: bool,
         updated_at: datetime,
     ) -> None:
-        if not job_key.strip():
-            raise ValueError("job_key is required")
+        key = _job_key(job_key)
         updated = _utc(updated_at, "updated_at")
         cursor_json = _canonical_bytes(dict(cursor)).decode("utf-8")
         with self._connection() as connection:
             existing = connection.execute(
                 "SELECT completed FROM checkpoints WHERE job_key=?",
-                (job_key,),
+                (key,),
             ).fetchone()
             if existing is not None and bool(existing["completed"]) and not completed:
                 raise ValueError("completed checkpoint cannot be reopened")
@@ -741,14 +891,15 @@ class HistoricalEvidenceStoreV2:
                     completed=excluded.completed,
                     updated_at=excluded.updated_at
                 """,
-                (job_key, cursor_json, int(completed), updated.isoformat()),
+                (key, cursor_json, int(completed), updated.isoformat()),
             )
 
     def load_checkpoint(self, job_key: str) -> BackfillCheckpoint | None:
+        key = _job_key(job_key)
         with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM checkpoints WHERE job_key=?",
-                (job_key,),
+                (key,),
             ).fetchone()
         if row is None:
             return None
@@ -756,7 +907,7 @@ class HistoricalEvidenceStoreV2:
         if not isinstance(cursor, dict):
             raise RuntimeError("stored checkpoint cursor must be an object")
         return BackfillCheckpoint(
-            job_key=job_key,
+            job_key=key,
             cursor=cast(dict[str, object], cursor),
             completed=bool(row["completed"]),
             updated_at=datetime.fromisoformat(str(row["updated_at"])),
@@ -778,6 +929,7 @@ class HistoricalEvidenceStoreV2:
             partition_key=partition_key,
             observations=observations,
         )
+        self.register_job_partition(job_key=job_key, partition=partition)
         self.save_checkpoint(
             job_key=job_key,
             cursor=cursor,
