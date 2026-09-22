@@ -232,7 +232,7 @@ def test_full_state_separates_observed_and_inferred_evidence() -> None:
     assert state.cex_bid_depth_usd == pytest.approx(2_000_000)
     assert state.cex_ask_depth_usd == pytest.approx(1_000_000)
     assert state.cex_depth_imbalance == pytest.approx(1 / 3)
-    assert state.open_interest_usd == pytest.approx(52_000_000)
+    assert state.open_interest_usd == pytest.approx(50_000_000)
     assert state.funding_rate == pytest.approx(0.0002)
     assert state.basis_bps == pytest.approx(12)
     assert state.taker_buy_sell_ratio == pytest.approx(1.25)

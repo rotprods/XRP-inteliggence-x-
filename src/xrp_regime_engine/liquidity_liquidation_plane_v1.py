@@ -86,6 +86,12 @@ _PRIMARY_MARKET_METRICS = frozenset(
     }
 )
 
+_AUTHORITY_PRIORITY = (
+    EvidenceAuthority.PRIMARY_OBSERVED,
+    EvidenceAuthority.AGGREGATED_OBSERVED,
+    EvidenceAuthority.INFERRED_MODEL,
+)
+
 
 def _utc(value: datetime, field: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
@@ -316,18 +322,32 @@ def _robust_center(values: Sequence[float]) -> float | None:
     return (ordered[middle - 1] + ordered[middle]) / 2
 
 
+def _select_metric_observations(
+    observations: Sequence[LiquidityObservation],
+    metric: LiquidityMetricKind,
+) -> tuple[tuple[LiquidityObservation, ...], EvidenceAuthority | None]:
+    matching = tuple(item for item in observations if item.metric is metric)
+    for authority in _AUTHORITY_PRIORITY:
+        selected = tuple(item for item in matching if item.authority is authority)
+        if selected:
+            return selected, authority
+    return (), None
+
+
 def _sum_metric(
     observations: Sequence[LiquidityObservation],
     metric: LiquidityMetricKind,
 ) -> float:
-    return sum(item.value for item in observations if item.metric is metric)
+    selected, _ = _select_metric_observations(observations, metric)
+    return sum(item.value for item in selected)
 
 
 def _center_metric(
     observations: Sequence[LiquidityObservation],
     metric: LiquidityMetricKind,
 ) -> float | None:
-    return _robust_center([item.value for item in observations if item.metric is metric])
+    selected, _ = _select_metric_observations(observations, metric)
+    return _robust_center([item.value for item in selected])
 
 
 def _cluster_distance_pct(reference_price: float, cluster: LiquidationCluster) -> float:
@@ -429,6 +449,23 @@ def build_liquidity_liquidation_state(
     inferred_providers = tuple(
         sorted({item.provider for item in inferred} | {item.provider for item in eligible_clusters})
     )
+
+    metric_authorities: dict[LiquidityMetricKind, EvidenceAuthority] = {}
+    for metric in LiquidityMetricKind:
+        _, authority = _select_metric_observations(eligible_observations, metric)
+        if authority is None:
+            continue
+        metric_authorities[metric] = authority
+        if authority is not EvidenceAuthority.PRIMARY_OBSERVED:
+            quality_flags.append(f"AUTHORITY_FALLBACK:{metric.value}:{authority.value}")
+
+    primary_market_authority_fallback = any(
+        metric in _PRIMARY_MARKET_METRICS
+        and authority is not EvidenceAuthority.PRIMARY_OBSERVED
+        for metric, authority in metric_authorities.items()
+    )
+    if primary_market_authority_fallback:
+        quality_flags.append("PRIMARY_MARKET_AUTHORITY_FALLBACK")
 
     cex_bid_depth = _sum_metric(
         eligible_observations,
@@ -597,6 +634,7 @@ def build_liquidity_liquidation_state(
         len(observed_providers) >= selected_policy.minimum_observed_provider_count
         and len(primary_market_venues) >= selected_policy.minimum_primary_market_venue_count
         and bool(primary)
+        and not primary_market_authority_fallback
     )
 
     payload = {
