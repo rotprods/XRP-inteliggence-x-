@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -17,7 +18,6 @@ from xrp_regime_engine.historical_contract import (
 from xrp_regime_engine.historical_store_v2 import DurableManifest, DurablePartition
 
 T0 = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
-MANIFEST_SHA = sha256(b"manifest").hexdigest()
 PARTITION_SHA = sha256(b"partition").hexdigest()
 OTHER_PARTITION_SHA = sha256(b"other-partition").hexdigest()
 PAYLOAD_SHA = sha256(b"payload").hexdigest()
@@ -98,15 +98,37 @@ def partition(digest: str = PARTITION_SHA) -> DurablePartition:
 
 
 def manifest(*partition_ids: str) -> DurableManifest:
+    manifest_partitions = [partition(item.removeprefix("partition:sha256:")) for item in partition_ids]
+    material = {
+        "dataset": "xrp_spot_1h",
+        "schema_version": "1",
+        "created_at": (T0 + timedelta(minutes=1)).isoformat(),
+        "partitions": [
+            item.to_dict()
+            for item in sorted(
+                manifest_partitions,
+                key=lambda item: (item.partition_key, item.partition_id),
+            )
+        ],
+        "total_rows": len(partition_ids),
+    }
+    payload = json.dumps(
+        material,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8") + b"\n"
+    digest = sha256(payload).hexdigest()
     return DurableManifest(
-        manifest_id=f"manifest:sha256:{MANIFEST_SHA}",
-        manifest_sha256=MANIFEST_SHA,
+        manifest_id=f"manifest:sha256:{digest}",
+        manifest_sha256=digest,
         dataset="xrp_spot_1h",
         schema_version="1",
         created_at=T0 + timedelta(minutes=1),
         partition_ids=partition_ids,
         total_rows=len(partition_ids),
-        relative_path=f"manifests/xrp_spot_1h/1/{MANIFEST_SHA}.json",
+        relative_path=f"manifests/xrp_spot_1h/1/{digest}.json",
     )
 
 
@@ -130,6 +152,7 @@ def test_low_level_value_guards_fail_closed() -> None:
 
 def test_direct_version_structural_guards_fail_closed() -> None:
     current = version()
+    manifest_hash = current.source_manifest_hashes[0]
     with pytest.raises(ValueError, match="created_at cannot precede"):
         replace(current, created_at=T0 - timedelta(seconds=1))
     with pytest.raises(ValueError, match="total_rows must be positive"):
@@ -144,7 +167,7 @@ def test_direct_version_structural_guards_fail_closed() -> None:
         replace(
             current,
             source_manifest_ids=(current.source_manifest_ids[0], current.source_manifest_ids[0]),
-            source_manifest_hashes=(MANIFEST_SHA, MANIFEST_SHA),
+            source_manifest_hashes=(manifest_hash, manifest_hash),
         )
     with pytest.raises(ValueError, match="partition_ids must be unique"):
         replace(
@@ -156,7 +179,7 @@ def test_direct_version_structural_guards_fail_closed() -> None:
         replace(
             current,
             source_manifest_ids=(f"manifest:sha256:{'f' * 64}", current.source_manifest_ids[0]),
-            source_manifest_hashes=("f" * 64, MANIFEST_SHA),
+            source_manifest_hashes=("f" * 64, manifest_hash),
         )
     with pytest.raises(ValueError, match="partition_ids must be sorted"):
         replace(
