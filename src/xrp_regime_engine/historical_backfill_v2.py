@@ -178,9 +178,11 @@ class BackfillRunnerV2:
         self,
         *,
         adapter: HistoricalAdapterV2,
+        job_key: str,
         checkpoint_updated_at: datetime,
     ) -> DurableManifest:
-        return self.store.finalize_manifest(
+        return self.store.finalize_job_manifest(
+            job_key=job_key,
             dataset=adapter.dataset,
             schema_version=adapter.schema_version,
             created_at=checkpoint_updated_at,
@@ -197,6 +199,7 @@ class BackfillRunnerV2:
         if checkpoint is not None and checkpoint.completed:
             manifest = self._finalize_from_checkpoint(
                 adapter=adapter,
+                job_key=key,
                 checkpoint_updated_at=checkpoint.updated_at,
             )
             return BackfillRunResultV2(
@@ -279,7 +282,8 @@ class BackfillRunnerV2:
 
         if final_receipt_time is None:
             raise RuntimeError("completed backfill has no receipt timestamp")
-        manifest = self.store.finalize_manifest(
+        manifest = self.store.finalize_job_manifest(
+            job_key=key,
             dataset=adapter.dataset,
             schema_version=adapter.schema_version,
             created_at=final_receipt_time,
