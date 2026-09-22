@@ -46,6 +46,47 @@ class LiquidationClusterSide(StrEnum):
     SHORTS_LIQUIDATE_ABOVE = "SHORTS_LIQUIDATE_ABOVE"
 
 
+_NON_NEGATIVE_METRICS = frozenset(
+    {
+        LiquidityMetricKind.CEX_BID_DEPTH_USD,
+        LiquidityMetricKind.CEX_ASK_DEPTH_USD,
+        LiquidityMetricKind.LARGE_LIMIT_BID_USD,
+        LiquidityMetricKind.LARGE_LIMIT_ASK_USD,
+        LiquidityMetricKind.OPEN_INTEREST_USD,
+        LiquidityMetricKind.TAKER_BUY_SELL_RATIO,
+        LiquidityMetricKind.EXECUTED_LONG_LIQUIDATIONS_USD,
+        LiquidityMetricKind.EXECUTED_SHORT_LIQUIDATIONS_USD,
+        LiquidityMetricKind.XRPL_AMM_XRP_RESERVE,
+        LiquidityMetricKind.XRPL_AMM_QUOTE_RESERVE,
+        LiquidityMetricKind.XRPL_DEX_BID_FUNDED,
+        LiquidityMetricKind.XRPL_DEX_ASK_FUNDED,
+        LiquidityMetricKind.XRPL_AMM_SLIPPAGE_10K_BPS,
+        LiquidityMetricKind.XRPL_DEX_SPREAD_BPS,
+        LiquidityMetricKind.EXCHANGE_INFLOW_XRP,
+        LiquidityMetricKind.EXCHANGE_OUTFLOW_XRP,
+        LiquidityMetricKind.WHALE_LONG_USD,
+        LiquidityMetricKind.WHALE_SHORT_USD,
+    }
+)
+
+_PRIMARY_MARKET_METRICS = frozenset(
+    {
+        LiquidityMetricKind.CEX_BID_DEPTH_USD,
+        LiquidityMetricKind.CEX_ASK_DEPTH_USD,
+        LiquidityMetricKind.LARGE_LIMIT_BID_USD,
+        LiquidityMetricKind.LARGE_LIMIT_ASK_USD,
+        LiquidityMetricKind.OPEN_INTEREST_USD,
+        LiquidityMetricKind.OPEN_INTEREST_DELTA_USD,
+        LiquidityMetricKind.OPEN_INTEREST_VELOCITY_USD_PER_MIN,
+        LiquidityMetricKind.FUNDING_RATE,
+        LiquidityMetricKind.BASIS_BPS,
+        LiquidityMetricKind.TAKER_BUY_SELL_RATIO,
+        LiquidityMetricKind.EXECUTED_LONG_LIQUIDATIONS_USD,
+        LiquidityMetricKind.EXECUTED_SHORT_LIQUIDATIONS_USD,
+    }
+)
+
+
 def _utc(value: datetime, field: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field} must be timezone-aware")
@@ -117,7 +158,10 @@ class LiquidityObservation:
         object.__setattr__(self, "observed_at", observed)
         object.__setattr__(self, "available_at", available)
         object.__setattr__(self, "fetched_at", fetched)
-        object.__setattr__(self, "value", _finite(self.value, "value"))
+        value = _finite(self.value, "value")
+        if self.metric in _NON_NEGATIVE_METRICS and value < 0:
+            raise ValueError(f"{self.metric.value} cannot be negative")
+        object.__setattr__(self, "value", value)
         confidence = _finite(self.confidence, "confidence")
         if not 0 <= confidence <= 1:
             raise ValueError("confidence must be within [0, 1]")
@@ -182,6 +226,7 @@ class LiquidityPlanePolicy:
     near_bands_pct: tuple[float, ...] = (0.01, 0.02, 0.05)
     minimum_cluster_confidence: float = 0.50
     minimum_observed_provider_count: int = 2
+    minimum_primary_market_venue_count: int = 2
 
     def __post_init__(self) -> None:
         if _finite(self.max_observation_age_seconds, "max_observation_age_seconds") <= 0:
@@ -190,6 +235,8 @@ class LiquidityPlanePolicy:
             raise ValueError("max_cluster_age_seconds must be positive")
         if self.minimum_observed_provider_count < 1:
             raise ValueError("minimum_observed_provider_count must be positive")
+        if self.minimum_primary_market_venue_count < 1:
+            raise ValueError("minimum_primary_market_venue_count must be positive")
         bands = tuple(sorted({_finite(value, "near_band") for value in self.near_bands_pct}))
         if not bands or any(value <= 0 or value > 1 for value in bands):
             raise ValueError("near_bands_pct must contain values within (0, 1]")
@@ -214,6 +261,7 @@ class LiquidityLiquidationState:
     prediction_time: datetime
     reference_price: float
     observed_provider_set: tuple[str, ...]
+    primary_market_venue_set: tuple[str, ...]
     inferred_provider_set: tuple[str, ...]
     primary_observed_count: int
     aggregated_observed_count: int
@@ -346,6 +394,15 @@ def build_liquidity_liquidation_state(
         if cluster.confidence < selected_policy.minimum_cluster_confidence:
             quality_flags.append("LOW_CONFIDENCE_CLUSTER_REJECTED")
             continue
+        if (
+            cluster.side is LiquidationClusterSide.LONGS_LIQUIDATE_BELOW
+            and cluster.upper_price > price
+        ) or (
+            cluster.side is LiquidationClusterSide.SHORTS_LIQUIDATE_ABOVE
+            and cluster.lower_price < price
+        ):
+            quality_flags.append("CLUSTER_SIDE_PRICE_INCONSISTENT")
+            continue
         eligible_clusters.append(cluster)
 
     primary = [
@@ -364,6 +421,15 @@ def build_liquidity_liquidation_state(
         if item.authority is EvidenceAuthority.INFERRED_MODEL
     ]
     observed_providers = tuple(sorted({item.provider for item in (*primary, *aggregated)}))
+    primary_market_venues = tuple(
+        sorted(
+            {
+                item.venue
+                for item in primary
+                if item.metric in _PRIMARY_MARKET_METRICS
+            }
+        )
+    )
     inferred_providers = tuple(
         sorted(
             {item.provider for item in inferred}
@@ -529,6 +595,11 @@ def build_liquidity_liquidation_state(
 
     if len(observed_providers) < selected_policy.minimum_observed_provider_count:
         quality_flags.append("OBSERVED_PROVIDER_COVERAGE_INSUFFICIENT")
+    if (
+        len(primary_market_venues)
+        < selected_policy.minimum_primary_market_venue_count
+    ):
+        quality_flags.append("PRIMARY_MARKET_VENUE_COVERAGE_INSUFFICIENT")
     if not eligible_clusters:
         quality_flags.append("LIQUIDATION_CLUSTER_NO_DATA")
     if not primary:
@@ -542,6 +613,8 @@ def build_liquidity_liquidation_state(
 
     point_in_time_eligible = (
         len(observed_providers) >= selected_policy.minimum_observed_provider_count
+        and len(primary_market_venues)
+        >= selected_policy.minimum_primary_market_venue_count
         and bool(primary)
     )
 
@@ -550,6 +623,7 @@ def build_liquidity_liquidation_state(
         "prediction_time": prediction.isoformat(),
         "reference_price": price,
         "observed_provider_set": list(observed_providers),
+        "primary_market_venue_set": list(primary_market_venues),
         "inferred_provider_set": list(inferred_providers),
         "primary_observed_count": len(primary),
         "aggregated_observed_count": len(aggregated),
@@ -604,6 +678,7 @@ def build_liquidity_liquidation_state(
         prediction_time=prediction,
         reference_price=price,
         observed_provider_set=observed_providers,
+        primary_market_venue_set=primary_market_venues,
         inferred_provider_set=inferred_providers,
         primary_observed_count=len(primary),
         aggregated_observed_count=len(aggregated),
