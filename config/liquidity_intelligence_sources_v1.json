@@ -14,7 +14,9 @@
         "CEX_BID_DEPTH_USD",
         "CEX_ASK_DEPTH_USD",
         "EXECUTED_LONG_LIQUIDATIONS_USD",
-        "EXECUTED_SHORT_LIQUIDATIONS_USD"
+        "EXECUTED_SHORT_LIQUIDATIONS_USD",
+        "OPEN_INTEREST_DELTA_USD",
+        "OPEN_INTEREST_VELOCITY_USD_PER_MIN"
       ],
       "notes": "Use only public market-data surfaces; preserve observed_at/available_at/fetched_at and instrument identity."
     },
@@ -55,7 +57,8 @@
       "access": "PUBLIC_JSON_RPC_OR_WEBSOCKET",
       "metrics": [
         "XRPL_AMM_XRP_RESERVE",
-        "XRPL_AMM_QUOTE_RESERVE"
+        "XRPL_AMM_QUOTE_RESERVE",
+        "XRPL_AMM_SLIPPAGE_10K_BPS"
       ],
       "notes": "Use validated-ledger AMM state and preserve ledger identity."
     },
@@ -66,7 +69,8 @@
       "access": "PUBLIC_JSON_RPC_OR_WEBSOCKET",
       "metrics": [
         "XRPL_DEX_BID_FUNDED",
-        "XRPL_DEX_ASK_FUNDED"
+        "XRPL_DEX_ASK_FUNDED",
+        "XRPL_DEX_SPREAD_BPS"
       ],
       "notes": "Prefer funded offer amounts; issuer identity is part of market identity."
     },
