@@ -281,6 +281,28 @@ def _detect_gaps(
     return tuple(gaps)
 
 
+def _validate_manifest_identity(
+    manifest: DurableManifest,
+    partitions: Sequence[DurablePartition],
+) -> None:
+    _content_id(manifest.manifest_id, "manifest:sha256:", "manifest_id")
+    _content_id(f"sha256:{manifest.manifest_sha256}", "sha256:", "manifest_sha256")
+    if manifest.manifest_id != f"manifest:sha256:{manifest.manifest_sha256}":
+        raise ValueError("manifest_id must match manifest_sha256")
+    created_at = _utc(manifest.created_at, "manifest.created_at")
+    ordered = tuple(sorted(partitions, key=lambda item: (item.partition_key, item.partition_id)))
+    material = {
+        "dataset": manifest.dataset,
+        "schema_version": manifest.schema_version,
+        "created_at": created_at.isoformat(),
+        "partitions": [partition.to_dict() for partition in ordered],
+        "total_rows": manifest.total_rows,
+    }
+    expected_digest = sha256(_canonical(material) + b"\n").hexdigest()
+    if manifest.manifest_sha256 != expected_digest:
+        raise ValueError("manifest content-addressed identity does not match canonical payload")
+
+
 def build_dataset_version(
     *,
     dataset_key: str,
@@ -323,15 +345,18 @@ def build_dataset_version(
             raise ValueError("manifest contains duplicate partition ids")
         referenced_partition_ids.update(manifest.partition_ids)
         manifest_rows = 0
+        manifest_partitions: list[DurablePartition] = []
         for partition_id in manifest.partition_ids:
             partition = partition_by_id.get(partition_id)
             if partition is None:
                 raise ValueError("manifest references a partition not supplied to dataset version")
             if partition.dataset != manifest.dataset:
                 raise ValueError("manifest references a partition from another dataset")
+            manifest_partitions.append(partition)
             manifest_rows += partition.row_count
         if manifest_rows != manifest.total_rows:
             raise ValueError("manifest total_rows disagrees with referenced partitions")
+        _validate_manifest_identity(manifest, manifest_partitions)
     if referenced_partition_ids != set(partition_ids):
         raise ValueError("dataset partitions must exactly match manifest references")
 
