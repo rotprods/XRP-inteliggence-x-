@@ -21,6 +21,8 @@ class LiquidityMetricKind(StrEnum):
     LARGE_LIMIT_BID_USD = "LARGE_LIMIT_BID_USD"
     LARGE_LIMIT_ASK_USD = "LARGE_LIMIT_ASK_USD"
     OPEN_INTEREST_USD = "OPEN_INTEREST_USD"
+    OPEN_INTEREST_DELTA_USD = "OPEN_INTEREST_DELTA_USD"
+    OPEN_INTEREST_VELOCITY_USD_PER_MIN = "OPEN_INTEREST_VELOCITY_USD_PER_MIN"
     FUNDING_RATE = "FUNDING_RATE"
     BASIS_BPS = "BASIS_BPS"
     TAKER_BUY_SELL_RATIO = "TAKER_BUY_SELL_RATIO"
@@ -30,6 +32,8 @@ class LiquidityMetricKind(StrEnum):
     XRPL_AMM_QUOTE_RESERVE = "XRPL_AMM_QUOTE_RESERVE"
     XRPL_DEX_BID_FUNDED = "XRPL_DEX_BID_FUNDED"
     XRPL_DEX_ASK_FUNDED = "XRPL_DEX_ASK_FUNDED"
+    XRPL_AMM_SLIPPAGE_10K_BPS = "XRPL_AMM_SLIPPAGE_10K_BPS"
+    XRPL_DEX_SPREAD_BPS = "XRPL_DEX_SPREAD_BPS"
     EXCHANGE_INFLOW_XRP = "EXCHANGE_INFLOW_XRP"
     EXCHANGE_OUTFLOW_XRP = "EXCHANGE_OUTFLOW_XRP"
     ETF_NET_FLOW_USD = "ETF_NET_FLOW_USD"
@@ -220,6 +224,8 @@ class LiquidityLiquidationState:
     cex_ask_depth_usd: float | None
     cex_depth_imbalance: float | None
     open_interest_usd: float | None
+    open_interest_delta_usd: float | None
+    open_interest_velocity_usd_per_min: float | None
     funding_rate: float | None
     basis_bps: float | None
     taker_buy_sell_ratio: float | None
@@ -230,6 +236,8 @@ class LiquidityLiquidationState:
     xrpl_amm_quote_reserve: float
     xrpl_dex_bid_funded: float
     xrpl_dex_ask_funded: float
+    xrpl_amm_slippage_10k_bps: float | None
+    xrpl_dex_spread_bps: float | None
     exchange_inflow_xrp: float
     exchange_outflow_xrp: float
     etf_net_flow_usd: float
@@ -454,6 +462,14 @@ def build_liquidity_liquidation_state(
         eligible_observations,
         LiquidityMetricKind.OPEN_INTEREST_USD,
     )
+    open_interest_delta_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.OPEN_INTEREST_DELTA_USD,
+    )
+    open_interest_velocity_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.OPEN_INTEREST_VELOCITY_USD_PER_MIN,
+    )
     funding_center = _center_metric(
         eligible_observations,
         LiquidityMetricKind.FUNDING_RATE,
@@ -481,6 +497,14 @@ def build_liquidity_liquidation_state(
     xrpl_dex_ask_funded = _sum_metric(
         eligible_observations,
         LiquidityMetricKind.XRPL_DEX_ASK_FUNDED,
+    )
+    xrpl_amm_slippage_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.XRPL_AMM_SLIPPAGE_10K_BPS,
+    )
+    xrpl_dex_spread_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.XRPL_DEX_SPREAD_BPS,
     )
     exchange_inflow_xrp = _sum_metric(
         eligible_observations,
@@ -536,6 +560,8 @@ def build_liquidity_liquidation_state(
         "cex_ask_depth_usd": cex_ask_depth if cex_ask_depth > 0 else None,
         "cex_depth_imbalance": depth_imbalance,
         "open_interest_usd": open_interest_center,
+        "open_interest_delta_usd": open_interest_delta_center,
+        "open_interest_velocity_usd_per_min": open_interest_velocity_center,
         "funding_rate": funding_center,
         "basis_bps": basis_center,
         "taker_buy_sell_ratio": taker_ratio_center,
@@ -546,6 +572,8 @@ def build_liquidity_liquidation_state(
         "xrpl_amm_quote_reserve": xrpl_amm_quote_reserve,
         "xrpl_dex_bid_funded": xrpl_dex_bid_funded,
         "xrpl_dex_ask_funded": xrpl_dex_ask_funded,
+        "xrpl_amm_slippage_10k_bps": xrpl_amm_slippage_center,
+        "xrpl_dex_spread_bps": xrpl_dex_spread_center,
         "exchange_inflow_xrp": exchange_inflow_xrp,
         "exchange_outflow_xrp": exchange_outflow_xrp,
         "etf_net_flow_usd": etf_net_flow_usd,
@@ -586,6 +614,8 @@ def build_liquidity_liquidation_state(
         cex_ask_depth_usd=cex_ask_depth if cex_ask_depth > 0 else None,
         cex_depth_imbalance=depth_imbalance,
         open_interest_usd=open_interest_center,
+        open_interest_delta_usd=open_interest_delta_center,
+        open_interest_velocity_usd_per_min=open_interest_velocity_center,
         funding_rate=funding_center,
         basis_bps=basis_center,
         taker_buy_sell_ratio=taker_ratio_center,
@@ -596,6 +626,8 @@ def build_liquidity_liquidation_state(
         xrpl_amm_quote_reserve=xrpl_amm_quote_reserve,
         xrpl_dex_bid_funded=xrpl_dex_bid_funded,
         xrpl_dex_ask_funded=xrpl_dex_ask_funded,
+        xrpl_amm_slippage_10k_bps=xrpl_amm_slippage_center,
+        xrpl_dex_spread_bps=xrpl_dex_spread_center,
         exchange_inflow_xrp=exchange_inflow_xrp,
         exchange_outflow_xrp=exchange_outflow_xrp,
         etf_net_flow_usd=etf_net_flow_usd,
