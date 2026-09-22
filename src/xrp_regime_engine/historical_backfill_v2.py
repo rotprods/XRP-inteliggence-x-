@@ -27,6 +27,16 @@ def _canonical_cursor(cursor: Mapping[str, object]) -> str:
     )
 
 
+def _adapter_generation(adapter: HistoricalAdapterV2) -> tuple[str, str]:
+    ingestion_version = adapter.ingestion_version.strip()
+    parser_version = adapter.parser_version.strip()
+    if not ingestion_version:
+        raise ValueError("adapter ingestion_version cannot be empty")
+    if not parser_version:
+        raise ValueError("adapter parser_version cannot be empty")
+    return ingestion_version, parser_version
+
+
 @dataclass(frozen=True, slots=True)
 class BackfillWindowV2:
     start: datetime
@@ -80,6 +90,8 @@ class HistoricalAdapterV2(Protocol):
     provider: str
     dataset: str
     schema_version: str
+    ingestion_version: str
+    parser_version: str
 
     def initial_cursor(self, window: BackfillWindowV2) -> Mapping[str, object]: ...
 
@@ -119,10 +131,13 @@ class BackfillRunnerV2:
 
     @staticmethod
     def job_key(adapter: HistoricalAdapterV2, window: BackfillWindowV2) -> str:
+        ingestion_version, parser_version = _adapter_generation(adapter)
         material = {
             "provider": adapter.provider,
             "dataset": adapter.dataset,
             "schema_version": adapter.schema_version,
+            "ingestion_version": ingestion_version,
+            "parser_version": parser_version,
             "window": window.identity(),
         }
         digest = sha256(
@@ -134,12 +149,20 @@ class BackfillRunnerV2:
     def _validate_page(
         adapter: HistoricalAdapterV2,
         page: BackfillPageV2,
+        window: BackfillWindowV2,
     ) -> None:
+        ingestion_version, parser_version = _adapter_generation(adapter)
         if page.receipt.provider != adapter.provider:
             raise ValueError("adapter page receipt provider does not match adapter provider")
+        if page.receipt.ingestion_version != ingestion_version:
+            raise ValueError("adapter page receipt ingestion_version does not match adapter generation")
+        if page.receipt.parser_version != parser_version:
+            raise ValueError("adapter page receipt parser_version does not match adapter generation")
         for observation in page.observations:
             if observation.dataset != adapter.dataset:
                 raise ValueError("adapter page contains observation from another dataset")
+            if observation.observed_at < window.start or observation.observed_at >= window.end:
+                raise ValueError("adapter page contains observation outside backfill window")
             if observation.fetch_id != page.receipt.fetch_id:
                 raise ValueError("observation fetch_id does not match page receipt")
             if observation.payload_sha256 != page.receipt.payload_sha256:
@@ -207,7 +230,7 @@ class BackfillRunnerV2:
             seen_cursors.add(cursor_key)
 
             page = adapter.fetch_page(window, cursor)
-            self._validate_page(adapter, page)
+            self._validate_page(adapter, page, window)
             pages_fetched += 1
             observations_seen += len(page.observations)
             final_receipt_time = page.receipt.fetched_at
