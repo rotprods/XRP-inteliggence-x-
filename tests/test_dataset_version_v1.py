@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -21,7 +22,6 @@ T0 = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
 REQUEST_SHA = sha256(b"request").hexdigest()
 PAYLOAD_SHA = sha256(b"payload").hexdigest()
 PARTITION_SHA = sha256(b"partition").hexdigest()
-MANIFEST_SHA = sha256(b"manifest").hexdigest()
 
 
 def receipt(provider: str, fetched_at: datetime) -> FetchReceipt:
@@ -83,17 +83,37 @@ def partition(*, row_count: int = 2) -> DurablePartition:
     )
 
 
+def _manifest_digest(*, row_count: int, partition_id: str) -> str:
+    manifest_partition = replace(partition(row_count=row_count), partition_id=partition_id)
+    material = {
+        "dataset": "xrp_spot_1h",
+        "schema_version": "1",
+        "created_at": (T0 + timedelta(minutes=1)).isoformat(),
+        "partitions": [manifest_partition.to_dict()],
+        "total_rows": row_count,
+    }
+    payload = json.dumps(
+        material,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8") + b"\n"
+    return sha256(payload).hexdigest()
+
+
 def manifest(*, row_count: int = 2, partition_id: str | None = None) -> DurableManifest:
     pid = partition_id or f"partition:sha256:{PARTITION_SHA}"
+    digest = _manifest_digest(row_count=row_count, partition_id=pid)
     return DurableManifest(
-        manifest_id=f"manifest:sha256:{MANIFEST_SHA}",
-        manifest_sha256=MANIFEST_SHA,
+        manifest_id=f"manifest:sha256:{digest}",
+        manifest_sha256=digest,
         dataset="xrp_spot_1h",
         schema_version="1",
         created_at=T0 + timedelta(minutes=1),
         partition_ids=(pid,),
         total_rows=row_count,
-        relative_path=f"manifests/xrp_spot_1h/1/{MANIFEST_SHA}.json",
+        relative_path=f"manifests/xrp_spot_1h/1/{digest}.json",
     )
 
 
@@ -186,6 +206,17 @@ def test_manifest_dataset_and_row_count_must_match() -> None:
         build(manifests=(replace(manifest(), dataset="btc_spot_1h"),))
     with pytest.raises(ValueError, match="total_rows"):
         build(manifests=(manifest(row_count=3),))
+
+
+def test_manifest_content_address_must_match_canonical_payload() -> None:
+    forged_digest = sha256(b"forged-manifest").hexdigest()
+    forged = replace(
+        manifest(),
+        manifest_id=f"manifest:sha256:{forged_digest}",
+        manifest_sha256=forged_digest,
+    )
+    with pytest.raises(ValueError, match="manifest content-addressed identity"):
+        build(manifests=(forged,))
 
 
 def test_observation_count_must_match_partition_rows() -> None:
