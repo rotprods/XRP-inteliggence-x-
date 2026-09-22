@@ -133,6 +133,13 @@ def test_full_state_separates_observed_and_inferred_evidence() -> None:
             venue="MULTI",
             authority=EvidenceAuthority.AGGREGATED_OBSERVED,
         ),
+        obs(
+            "kraken-oi-delta",
+            LiquidityMetricKind.OPEN_INTEREST_DELTA_USD,
+            0,
+            provider="Kraken",
+            venue="Kraken",
+        ),
         obs("funding", LiquidityMetricKind.FUNDING_RATE, 0.0002),
         obs("basis", LiquidityMetricKind.BASIS_BPS, 12),
         obs("taker", LiquidityMetricKind.TAKER_BUY_SELL_RATIO, 1.25),
@@ -219,7 +226,8 @@ def test_full_state_separates_observed_and_inferred_evidence() -> None:
     )
 
     assert state.point_in_time_eligible is True
-    assert state.observed_provider_set == ("Binance", "CoinGlass", "XRPL")
+    assert state.observed_provider_set == ("Binance", "CoinGlass", "Kraken", "XRPL")
+    assert state.primary_market_venue_set == ("Binance", "Kraken")
     assert state.inferred_provider_set == ("CoinGlass",)
     assert state.cex_bid_depth_usd == pytest.approx(2_000_000)
     assert state.cex_ask_depth_usd == pytest.approx(1_000_000)
@@ -446,3 +454,66 @@ def test_cluster_validation_fail_closed() -> None:
             notional=1,
             confidence=2,
         )
+
+
+
+def test_negative_non_negative_metric_is_rejected() -> None:
+    with pytest.raises(ValueError, match="cannot be negative"):
+        obs(
+            "bad-depth",
+            LiquidityMetricKind.CEX_BID_DEPTH_USD,
+            -1,
+        )
+
+
+def test_cluster_side_price_inconsistency_is_rejected_before_aggregation() -> None:
+    observations = (
+        obs("binance", LiquidityMetricKind.CEX_BID_DEPTH_USD, 1_000_000),
+        obs(
+            "kraken",
+            LiquidityMetricKind.CEX_ASK_DEPTH_USD,
+            1_000_000,
+            provider="Kraken",
+            venue="Kraken",
+        ),
+    )
+    wrong_side = cluster(
+        "wrong-side",
+        LiquidationClusterSide.SHORTS_LIQUIDATE_ABOVE,
+        lower=1.50,
+        upper=1.55,
+        notional=50_000_000,
+    )
+    state = build_liquidity_liquidation_state(
+        symbol="XRPUSDT",
+        reference_price=1.56,
+        prediction_time=T0,
+        observations=observations,
+        liquidation_clusters=(wrong_side,),
+    )
+    assert state.inferred_count == 0
+    assert state.inferred_liquidation_bias is None
+    assert "CLUSTER_SIDE_PRICE_INCONSISTENT" in state.quality_flags
+
+
+def test_xrpl_does_not_substitute_for_second_primary_market_venue() -> None:
+    state = build_liquidity_liquidation_state(
+        symbol="XRPUSDT",
+        reference_price=1.56,
+        prediction_time=T0,
+        observations=(
+            obs("binance", LiquidityMetricKind.CEX_BID_DEPTH_USD, 1_000_000),
+            obs(
+                "xrpl",
+                LiquidityMetricKind.XRPL_AMM_XRP_RESERVE,
+                5_000_000,
+                provider="XRPL",
+                venue="XRPL_AMM",
+            ),
+        ),
+        liquidation_clusters=(),
+    )
+    assert state.observed_provider_set == ("Binance", "XRPL")
+    assert state.primary_market_venue_set == ("Binance",)
+    assert state.point_in_time_eligible is False
+    assert "PRIMARY_MARKET_VENUE_COVERAGE_INSUFFICIENT" in state.quality_flags
