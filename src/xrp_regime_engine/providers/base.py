@@ -43,6 +43,18 @@ class RawJsonEvidence:
     payload_sha256: str
     fetched_at: datetime
 
+    def __post_init__(self) -> None:
+        if self.latency_ms < 0:
+            raise ValueError("latency_ms cannot be negative")
+        if not self.raw_payload:
+            raise ValueError("raw_payload cannot be empty")
+        expected_digest = hashlib.sha256(self.raw_payload).hexdigest()
+        if self.payload_sha256 != expected_digest:
+            raise ValueError("payload_sha256 does not match raw_payload")
+        if self.fetched_at.tzinfo is None or self.fetched_at.utcoffset() is None:
+            raise ValueError("fetched_at must be timezone-aware")
+        object.__setattr__(self, "fetched_at", self.fetched_at.astimezone(UTC))
+
 
 class MarketDataProvider(ABC):
     name: str
