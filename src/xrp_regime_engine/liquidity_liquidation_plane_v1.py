@@ -450,6 +450,59 @@ def build_liquidity_liquidation_state(
         else None
     )
 
+    open_interest_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.OPEN_INTEREST_USD,
+    )
+    funding_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.FUNDING_RATE,
+    )
+    basis_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.BASIS_BPS,
+    )
+    taker_ratio_center = _center_metric(
+        eligible_observations,
+        LiquidityMetricKind.TAKER_BUY_SELL_RATIO,
+    )
+    xrpl_amm_xrp_reserve = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.XRPL_AMM_XRP_RESERVE,
+    )
+    xrpl_amm_quote_reserve = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.XRPL_AMM_QUOTE_RESERVE,
+    )
+    xrpl_dex_bid_funded = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.XRPL_DEX_BID_FUNDED,
+    )
+    xrpl_dex_ask_funded = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.XRPL_DEX_ASK_FUNDED,
+    )
+    exchange_inflow_xrp = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.EXCHANGE_INFLOW_XRP,
+    )
+    exchange_outflow_xrp = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.EXCHANGE_OUTFLOW_XRP,
+    )
+    etf_net_flow_usd = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.ETF_NET_FLOW_USD,
+    )
+    whale_long_usd = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.WHALE_LONG_USD,
+    )
+    whale_short_usd = _sum_metric(
+        eligible_observations,
+        LiquidityMetricKind.WHALE_SHORT_USD,
+    )
+
     if len(observed_providers) < selected_policy.minimum_observed_provider_count:
         quality_flags.append("OBSERVED_PROVIDER_COVERAGE_INSUFFICIENT")
     if not eligible_clusters:
@@ -482,61 +535,22 @@ def build_liquidity_liquidation_state(
         "cex_bid_depth_usd": cex_bid_depth if cex_bid_depth > 0 else None,
         "cex_ask_depth_usd": cex_ask_depth if cex_ask_depth > 0 else None,
         "cex_depth_imbalance": depth_imbalance,
-        "open_interest_usd": _center_metric(
-            eligible_observations,
-            LiquidityMetricKind.OPEN_INTEREST_USD,
-        ),
-        "funding_rate": _center_metric(
-            eligible_observations,
-            LiquidityMetricKind.FUNDING_RATE,
-        ),
-        "basis_bps": _center_metric(
-            eligible_observations,
-            LiquidityMetricKind.BASIS_BPS,
-        ),
-        "taker_buy_sell_ratio": _center_metric(
-            eligible_observations,
-            LiquidityMetricKind.TAKER_BUY_SELL_RATIO,
-        ),
+        "open_interest_usd": open_interest_center,
+        "funding_rate": funding_center,
+        "basis_bps": basis_center,
+        "taker_buy_sell_ratio": taker_ratio_center,
         "executed_long_liquidations_usd": executed_long,
         "executed_short_liquidations_usd": executed_short,
         "executed_liquidation_imbalance": executed_imbalance,
-        "xrpl_amm_xrp_reserve": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.XRPL_AMM_XRP_RESERVE,
-        ),
-        "xrpl_amm_quote_reserve": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.XRPL_AMM_QUOTE_RESERVE,
-        ),
-        "xrpl_dex_bid_funded": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.XRPL_DEX_BID_FUNDED,
-        ),
-        "xrpl_dex_ask_funded": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.XRPL_DEX_ASK_FUNDED,
-        ),
-        "exchange_inflow_xrp": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.EXCHANGE_INFLOW_XRP,
-        ),
-        "exchange_outflow_xrp": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.EXCHANGE_OUTFLOW_XRP,
-        ),
-        "etf_net_flow_usd": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.ETF_NET_FLOW_USD,
-        ),
-        "whale_long_usd": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.WHALE_LONG_USD,
-        ),
-        "whale_short_usd": _sum_metric(
-            eligible_observations,
-            LiquidityMetricKind.WHALE_SHORT_USD,
-        ),
+        "xrpl_amm_xrp_reserve": xrpl_amm_xrp_reserve,
+        "xrpl_amm_quote_reserve": xrpl_amm_quote_reserve,
+        "xrpl_dex_bid_funded": xrpl_dex_bid_funded,
+        "xrpl_dex_ask_funded": xrpl_dex_ask_funded,
+        "exchange_inflow_xrp": exchange_inflow_xrp,
+        "exchange_outflow_xrp": exchange_outflow_xrp,
+        "etf_net_flow_usd": etf_net_flow_usd,
+        "whale_long_usd": whale_long_usd,
+        "whale_short_usd": whale_short_usd,
         "liquidation_bands": [
             {
                 "band_pct": item.band_pct,
@@ -571,22 +585,22 @@ def build_liquidity_liquidation_state(
         cex_bid_depth_usd=cex_bid_depth if cex_bid_depth > 0 else None,
         cex_ask_depth_usd=cex_ask_depth if cex_ask_depth > 0 else None,
         cex_depth_imbalance=depth_imbalance,
-        open_interest_usd=payload["open_interest_usd"],
-        funding_rate=payload["funding_rate"],
-        basis_bps=payload["basis_bps"],
-        taker_buy_sell_ratio=payload["taker_buy_sell_ratio"],
+        open_interest_usd=open_interest_center,
+        funding_rate=funding_center,
+        basis_bps=basis_center,
+        taker_buy_sell_ratio=taker_ratio_center,
         executed_long_liquidations_usd=executed_long,
         executed_short_liquidations_usd=executed_short,
         executed_liquidation_imbalance=executed_imbalance,
-        xrpl_amm_xrp_reserve=float(payload["xrpl_amm_xrp_reserve"]),
-        xrpl_amm_quote_reserve=float(payload["xrpl_amm_quote_reserve"]),
-        xrpl_dex_bid_funded=float(payload["xrpl_dex_bid_funded"]),
-        xrpl_dex_ask_funded=float(payload["xrpl_dex_ask_funded"]),
-        exchange_inflow_xrp=float(payload["exchange_inflow_xrp"]),
-        exchange_outflow_xrp=float(payload["exchange_outflow_xrp"]),
-        etf_net_flow_usd=float(payload["etf_net_flow_usd"]),
-        whale_long_usd=float(payload["whale_long_usd"]),
-        whale_short_usd=float(payload["whale_short_usd"]),
+        xrpl_amm_xrp_reserve=xrpl_amm_xrp_reserve,
+        xrpl_amm_quote_reserve=xrpl_amm_quote_reserve,
+        xrpl_dex_bid_funded=xrpl_dex_bid_funded,
+        xrpl_dex_ask_funded=xrpl_dex_ask_funded,
+        exchange_inflow_xrp=exchange_inflow_xrp,
+        exchange_outflow_xrp=exchange_outflow_xrp,
+        etf_net_flow_usd=etf_net_flow_usd,
+        whale_long_usd=whale_long_usd,
+        whale_short_usd=whale_short_usd,
         liquidation_bands=tuple(bands),
         nearest_long_liquidation_distance_pct=nearest_long,
         nearest_short_liquidation_distance_pct=nearest_short,
