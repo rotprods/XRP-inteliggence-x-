@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -49,6 +50,37 @@ async def test_request_hashes_raw_payload_and_reuses_safe_transport() -> None:
     assert payload == {"ok": True}
     assert latency >= 0
     assert digest == hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_request_evidence_preserves_exact_raw_bytes_and_fetch_time_without_repr_leak() -> None:
+    raw = b'{"ok":true,"sequence":7}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.test.invalid"
+        assert request.url.params["symbol"] == "XRPUSD"
+        return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+
+    provider = StubProvider("https://api.test.invalid", transport=httpx.MockTransport(handler))
+    before = datetime.now(UTC)
+    try:
+        evidence = await provider._request_json_evidence(
+            "GET",
+            "/history",
+            params={"symbol": "XRPUSD"},
+        )
+    finally:
+        after = datetime.now(UTC)
+        await provider.aclose()
+
+    assert evidence.payload == {"ok": True, "sequence": 7}
+    assert evidence.raw_payload == raw
+    assert evidence.payload_sha256 == hashlib.sha256(raw).hexdigest()
+    assert evidence.latency_ms >= 0
+    assert before <= evidence.fetched_at <= after
+    rendered = repr(evidence)
+    assert '"ok"' not in rendered
+    assert "XRPUSD" not in rendered
 
 
 @pytest.mark.asyncio
