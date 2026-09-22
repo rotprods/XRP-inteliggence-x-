@@ -395,6 +395,7 @@ class HistoricalEvidenceStoreV2:
         return payload
 
     def record_fetch(self, payload: bytes, receipt: FetchReceipt) -> RawBlob:
+        receipt.validate_identity()
         actual_digest = sha256(payload).hexdigest()
         if actual_digest != receipt.payload_sha256:
             raise ValueError("fetch receipt payload_sha256 does not match raw bytes")
