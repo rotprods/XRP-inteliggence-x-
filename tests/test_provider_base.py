@@ -47,6 +47,15 @@ def test_raw_json_evidence_fails_closed_on_digest_time_and_latency_corruption() 
             fetched_at=datetime.now(UTC),
         )
 
+    with pytest.raises(ValueError, match="payload does not match raw_payload"):
+        RawJsonEvidence(
+            payload={"ok": False},
+            raw_payload=raw,
+            latency_ms=1.0,
+            payload_sha256=digest,
+            fetched_at=datetime.now(UTC),
+        )
+
     with pytest.raises(ValueError, match="timezone-aware"):
         RawJsonEvidence(
             payload={"ok": True},
