@@ -190,7 +190,7 @@ def assess_liquidity_breakout_context(
     elif (
         spot_support_confirmed is True
         and leverage_expansion is False
-        and funding_dangerous is not True
+        and funding_dangerous is False
     ):
         posture = LiquidityBreakoutPosture.SPOT_SUPPORTIVE
     else:
