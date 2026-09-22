@@ -5,9 +5,11 @@ from hashlib import sha256
 import pytest
 
 from xrp_regime_engine.historical_contract import FetchReceipt
+from xrp_regime_engine.historical_store_v2 import HistoricalEvidenceStoreV2
 
 T0 = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
-PAYLOAD_SHA = sha256(b"payload").hexdigest()
+PAYLOAD = b"payload"
+PAYLOAD_SHA = sha256(PAYLOAD).hexdigest()
 OTHER_PAYLOAD_SHA = sha256(b"other-payload").hexdigest()
 REQUEST_SHA = sha256(b"request").hexdigest()
 OTHER_REQUEST_SHA = sha256(b"other-request").hexdigest()
@@ -70,6 +72,26 @@ def test_direct_constructor_rejects_valid_but_stale_fetch_id() -> None:
             ingestion_version=original.ingestion_version,
             parser_version=original.parser_version,
         )
+
+
+def test_stale_direct_constructor_fails_before_first_store_insert(tmp_path) -> None:
+    store = HistoricalEvidenceStoreV2(tmp_path)
+    original = receipt()
+    with pytest.raises(ValueError, match="canonical receipt payload"):
+        forged = FetchReceipt(
+            fetch_id=original.fetch_id,
+            source_id=original.source_id,
+            provider="forged-provider",
+            canonical_uri=original.canonical_uri,
+            endpoint=original.endpoint,
+            request_fingerprint=original.request_fingerprint,
+            fetched_at=original.fetched_at,
+            payload_sha256=original.payload_sha256,
+            ingestion_version=original.ingestion_version,
+            parser_version=original.parser_version,
+        )
+        store.record_fetch(PAYLOAD, forged)
+    assert not (tmp_path / "raw").exists()
 
 
 def test_identity_uses_normalized_utc_fetch_time() -> None:
