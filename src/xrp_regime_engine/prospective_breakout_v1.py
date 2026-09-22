@@ -109,11 +109,7 @@ class BreakoutEvidenceFrame:
             "funding_dangerous",
             "failed_breakout",
         )
-        return tuple(
-            field
-            for field in fields
-            if getattr(self, field) is None
-        )
+        return tuple(field for field in fields if getattr(self, field) is None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,8 +191,7 @@ def evaluate_breakout_frame(
         LiveBreakoutState.FAILED_BREAKOUT,
     }
     shadow_long_candidate = (
-        state is LiveBreakoutState.SPOT_CONFIRMED_BREAKOUT
-        and frame.funding_dangerous is not True
+        state is LiveBreakoutState.SPOT_CONFIRMED_BREAKOUT and frame.funding_dangerous is not True
     )
 
     payload = {
