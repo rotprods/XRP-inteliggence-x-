@@ -68,6 +68,33 @@ def _sanitize_uri(uri: str) -> str:
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, ""))
 
 
+def _fetch_receipt_material(
+    *,
+    source_id: str,
+    provider: str,
+    canonical_uri: str,
+    endpoint: str,
+    request_fingerprint: str,
+    fetched_at: datetime,
+    payload_sha256: str,
+    ingestion_version: str,
+    parser_version: str,
+) -> tuple[dict[str, str], datetime]:
+    fetched = _utc(fetched_at, "fetched_at")
+    material = {
+        "source_id": _text(source_id, "source_id"),
+        "provider": _text(provider, "provider"),
+        "canonical_uri": _sanitize_uri(canonical_uri),
+        "endpoint": _text(endpoint, "endpoint"),
+        "request_fingerprint": _sha(request_fingerprint, "request_fingerprint"),
+        "fetched_at": fetched.isoformat(),
+        "payload_sha256": _sha(payload_sha256, "payload_sha256"),
+        "ingestion_version": _text(ingestion_version, "ingestion_version"),
+        "parser_version": _text(parser_version, "parser_version"),
+    }
+    return material, fetched
+
+
 @dataclass(frozen=True, slots=True)
 class FetchReceipt:
     fetch_id: str
@@ -80,6 +107,29 @@ class FetchReceipt:
     payload_sha256: str
     ingestion_version: str
     parser_version: str
+
+    def __post_init__(self) -> None:
+        material, fetched = _fetch_receipt_material(
+            source_id=self.source_id,
+            provider=self.provider,
+            canonical_uri=self.canonical_uri,
+            endpoint=self.endpoint,
+            request_fingerprint=self.request_fingerprint,
+            fetched_at=self.fetched_at,
+            payload_sha256=self.payload_sha256,
+            ingestion_version=self.ingestion_version,
+            parser_version=self.parser_version,
+        )
+        object.__setattr__(self, "source_id", material["source_id"])
+        object.__setattr__(self, "provider", material["provider"])
+        object.__setattr__(self, "canonical_uri", material["canonical_uri"])
+        object.__setattr__(self, "endpoint", material["endpoint"])
+        object.__setattr__(self, "request_fingerprint", material["request_fingerprint"])
+        object.__setattr__(self, "fetched_at", fetched)
+        object.__setattr__(self, "payload_sha256", material["payload_sha256"])
+        object.__setattr__(self, "ingestion_version", material["ingestion_version"])
+        object.__setattr__(self, "parser_version", material["parser_version"])
+        self.validate_identity()
 
     @classmethod
     def create(
@@ -95,34 +145,53 @@ class FetchReceipt:
         ingestion_version: str,
         parser_version: str,
     ) -> FetchReceipt:
-        fetched = _utc(fetched_at, "fetched_at")
-        uri = _sanitize_uri(canonical_uri)
-        request_hash = _sha(request_fingerprint, "request_fingerprint")
-        payload_hash = _sha(payload_sha256, "payload_sha256")
-        material = {
-            "source_id": _text(source_id, "source_id"),
-            "provider": _text(provider, "provider"),
-            "canonical_uri": uri,
-            "endpoint": _text(endpoint, "endpoint"),
-            "request_fingerprint": request_hash,
-            "fetched_at": fetched.isoformat(),
-            "payload_sha256": payload_hash,
-            "ingestion_version": _text(ingestion_version, "ingestion_version"),
-            "parser_version": _text(parser_version, "parser_version"),
-        }
+        material, fetched = _fetch_receipt_material(
+            source_id=source_id,
+            provider=provider,
+            canonical_uri=canonical_uri,
+            endpoint=endpoint,
+            request_fingerprint=request_fingerprint,
+            fetched_at=fetched_at,
+            payload_sha256=payload_sha256,
+            ingestion_version=ingestion_version,
+            parser_version=parser_version,
+        )
         digest = sha256(_canonical(material)).hexdigest()
         return cls(
             fetch_id=f"fetch:sha256:{digest}",
             source_id=material["source_id"],
             provider=material["provider"],
-            canonical_uri=uri,
+            canonical_uri=material["canonical_uri"],
             endpoint=material["endpoint"],
-            request_fingerprint=request_hash,
+            request_fingerprint=material["request_fingerprint"],
             fetched_at=fetched,
-            payload_sha256=payload_hash,
+            payload_sha256=material["payload_sha256"],
             ingestion_version=material["ingestion_version"],
             parser_version=material["parser_version"],
         )
+
+    @property
+    def canonical_sha256(self) -> str:
+        material, _ = _fetch_receipt_material(
+            source_id=self.source_id,
+            provider=self.provider,
+            canonical_uri=self.canonical_uri,
+            endpoint=self.endpoint,
+            request_fingerprint=self.request_fingerprint,
+            fetched_at=self.fetched_at,
+            payload_sha256=self.payload_sha256,
+            ingestion_version=self.ingestion_version,
+            parser_version=self.parser_version,
+        )
+        return sha256(_canonical(material)).hexdigest()
+
+    def validate_identity(self) -> None:
+        prefix = "fetch:sha256:"
+        if not self.fetch_id.startswith(prefix):
+            raise ValueError("fetch_id must use fetch:sha256:<digest>")
+        digest = _sha(self.fetch_id.removeprefix(prefix), "fetch_id digest")
+        if digest != self.canonical_sha256:
+            raise ValueError("fetch_id does not match canonical receipt payload")
 
 
 @dataclass(frozen=True, slots=True)
